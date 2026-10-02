@@ -1,18 +1,23 @@
+import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../config.dart';
 import '../data/remote_store.dart';
 import '../data/repository.dart';
 import '../data/sync_service.dart';
 import '../logic/article_saver.dart';
 import 'cloud_api.dart';
+import 'members_service.dart';
 import 'ocr_service.dart';
 import 'pdf_service.dart';
 import 'quota_service.dart';
 import 'translate_service.dart';
+import 'update_service.dart';
 
 class Services {
   Services({
@@ -26,6 +31,8 @@ class Services {
     required this.quota,
     required this.saver,
     required this.pdf,
+    required this.updater,
+    required this.members,
   });
 
   final String libraryId;
@@ -38,6 +45,8 @@ class Services {
   final QuotaService quota;
   final ArticleSaver saver;
   final PdfService pdf;
+  final UpdateService updater;
+  final MembersService members;
 
   static Future<Services> create({
     required String libraryId,
@@ -51,6 +60,7 @@ class Services {
     final repo = Repository(db);
     final cloud = SupabaseCloudApi(client, libraryId);
     final translate = TranslateService(mlkit: mlkitTranslate, cloud: cloud);
+    final info = await PackageInfo.fromPlatform();
     return Services(
       libraryId: libraryId,
       userId: userId,
@@ -77,6 +87,12 @@ class Services {
         imageDir: imageDir,
       ),
       pdf: PdfService(),
+      updater: UpdateService(
+        client: http.Client(),
+        repoSlug: Config.githubRepo,
+        installedVersion: info.version,
+      ),
+      members: MembersService(client, libraryId, client.auth.currentUser?.email),
     );
   }
 }
