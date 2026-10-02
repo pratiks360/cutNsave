@@ -9,6 +9,7 @@ import '../data/repository.dart';
 import '../data/sync_service.dart';
 import 'cloud_api.dart';
 import 'ocr_service.dart';
+import 'quota_service.dart';
 import 'translate_service.dart';
 
 class Services {
@@ -20,6 +21,7 @@ class Services {
     required this.sync,
     required this.ocr,
     required this.translate,
+    required this.quota,
   });
 
   final String libraryId;
@@ -29,6 +31,7 @@ class Services {
   final SyncService sync;
   final OcrService ocr;
   final TranslateService translate;
+  final QuotaService quota;
 
   static Future<Services> create({
     required String libraryId,
@@ -54,6 +57,11 @@ class Services {
       ),
       ocr: OcrService(mlkit: mlkitRecognize, cloud: cloud),
       translate: TranslateService(mlkit: mlkitTranslate, cloud: cloud),
+      quota: QuotaService(
+        fetchRows: () async =>
+            await client.rpc('get_quota', params: {'lib': libraryId}) as List<dynamic>,
+        prefs: prefs,
+      ),
     );
   }
 }
