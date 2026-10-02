@@ -41,7 +41,7 @@ class SupabaseRemoteStore implements RemoteStore {
   @override
   Future<List<Category>> categoriesSince(DateTime? since) async {
     var q = _client.from('categories').select();
-    if (since != null) q = q.gte('updated_at', since.toUtc().toIso8601String());
+    if (since != null) q = q.gt('updated_at', since.toUtc().toIso8601String());
     final rows = await q.order('updated_at');
     return rows.map((r) => Category.fromRemote(Map<String, dynamic>.from(r))).toList();
   }
@@ -49,7 +49,7 @@ class SupabaseRemoteStore implements RemoteStore {
   @override
   Future<List<Article>> articlesSince(DateTime? since) async {
     var q = _client.from('articles').select();
-    if (since != null) q = q.gte('updated_at', since.toUtc().toIso8601String());
+    if (since != null) q = q.gt('updated_at', since.toUtc().toIso8601String());
     final rows = await q.order('updated_at');
     return rows.map((r) => Article.fromRemote(Map<String, dynamic>.from(r))).toList();
   }
