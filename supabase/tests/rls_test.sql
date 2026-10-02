@@ -1,5 +1,5 @@
 begin;
-select plan(11);
+select plan(13);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'mom@example.com'),
@@ -50,6 +50,14 @@ select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000
 set local role authenticated;
 select is(public.consume_quota(current_setting('test.lib')::uuid, 'ocr', 1), true, 'last free OCR call allowed');
 select is(public.consume_quota(current_setting('test.lib')::uuid, 'ocr', 1), false, 'call beyond cap refused');
+
+-- negative/zero amounts must be rejected, not accepted as a way to reset/inflate the counter
+select throws_ok(
+  $$select public.consume_quota(current_setting('test.lib')::uuid, 'ocr', -5)$$,
+  'P0001', 'amount must be positive', 'negative amount is rejected');
+select throws_ok(
+  $$select public.consume_quota(current_setting('test.lib')::uuid, 'ocr', 0)$$,
+  'P0001', 'amount must be positive', 'zero amount is rejected');
 
 select * from finish();
 rollback;

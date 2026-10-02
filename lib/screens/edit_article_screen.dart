@@ -62,27 +62,34 @@ class _EditArticleScreenState extends State<EditArticleScreen> {
 
   Future<void> _runOcr() async {
     setState(() => _busy = context.tr('scanning'));
-    final result = await _s.ocr.recognize(widget.imagePath!);
-    final lang = await identifyLanguage(result.text);
-    if (!mounted) return;
-    String? note;
-    if (result.skip == CloudSkip.quota) {
-      final q = await _s.quota.fetch();
+    try {
+      final result = await _s.ocr.recognize(widget.imagePath!);
+      final lang = await identifyLanguage(result.text);
       if (!mounted) return;
-      note = context.tr('cloud_limit', {
-        'date': q == null ? '' : DateFormat('d MMM').format(q.resetsOn),
+      String? note;
+      if (result.skip == CloudSkip.quota) {
+        final q = await _s.quota.fetch();
+        if (!mounted) return;
+        note = context.tr('cloud_limit', {
+          'date': q == null ? '' : DateFormat('d MMM').format(q.resetsOn),
+        });
+      } else if (result.skip == CloudSkip.offline) {
+        note = context.tr('cloud_offline');
+      }
+      if (result.text.trim().isEmpty) note = context.tr('ocr_empty');
+      setState(() {
+        _text.text = result.text;
+        _lang = lang;
+        _translate = lang != 'en';
+        _note = note;
+        _busy = null;
       });
-    } else if (result.skip == CloudSkip.offline) {
-      note = context.tr('cloud_offline');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = null);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(context.tr('error_generic'))));
     }
-    if (result.text.trim().isEmpty) note = context.tr('ocr_empty');
-    setState(() {
-      _text.text = result.text;
-      _lang = lang;
-      _translate = lang != 'en';
-      _note = note;
-      _busy = null;
-    });
   }
 
   Future<void> _newCategory() async {

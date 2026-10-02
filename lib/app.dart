@@ -16,6 +16,13 @@ class CutNSaveApp extends StatelessWidget {
     return MaterialApp(
       title: 'cutNsave',
       theme: buildTheme(),
+      builder: (context, child) {
+        final app = context.watch<AppState>();
+        if (app.status == AuthStatus.ready) {
+          return ServicesScope(child: child!);
+        }
+        return child!;
+      },
       home: const Gate(),
     );
   }
@@ -52,7 +59,7 @@ class Gate extends StatelessWidget {
           ),
         );
       case AuthStatus.ready:
-        return const ServicesScope(child: HomeScreen());
+        return const HomeScreen();
     }
   }
 }

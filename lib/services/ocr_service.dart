@@ -27,7 +27,16 @@ class OcrService {
   final Future<Uint8List> Function(String path) readBytes;
 
   Future<OcrResult> recognize(String imagePath) async {
-    final local = await mlkit(imagePath);
+    String local;
+    try {
+      local = await mlkit(imagePath);
+    } catch (_) {
+      // ML Kit threw (platform exception, decode failure, ...). This points at
+      // a bad/unsupported image rather than a network issue, so cloud OCR is
+      // unlikely to help either; fail soft instead of propagating and hanging
+      // the caller's UI.
+      return const OcrResult('', skip: CloudSkip.offline);
+    }
     if (!needsCloud(local)) return OcrResult(local);
     try {
       final text = await cloud.ocr(await readBytes(imagePath));

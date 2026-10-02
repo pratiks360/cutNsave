@@ -19,7 +19,10 @@ class SyncService {
   final SharedPreferences prefs;
   final String imageDir;
 
-  static const _cursorKey = 'last_pull';
+  static const _categoriesCursorKey = 'last_pull_categories';
+  static const _articlesCursorKey = 'last_pull_articles';
+
+  Future<void>? _inFlight;
 
   Future<bool> trySync() async {
     try {
@@ -30,7 +33,14 @@ class SyncService {
     }
   }
 
-  Future<void> sync() async {
+  /// Single-flight: if a sync is already running, callers share its Future
+  /// instead of starting a second overlapping push/pull (e.g. a save-triggered
+  /// sync racing a navigation-triggered refresh).
+  Future<void> sync() {
+    return _inFlight ??= _doSync().whenComplete(() => _inFlight = null);
+  }
+
+  Future<void> _doSync() async {
     await _push();
     await _pull();
   }
@@ -51,24 +61,32 @@ class SyncService {
   }
 
   Future<void> _pull() async {
-    final raw = prefs.getString(_cursorKey);
-    final since = raw == null ? null : DateTime.parse(raw);
-
-    final cats = await remote.categoriesSince(since);
+    final catsSince = _cursor(_categoriesCursorKey);
+    final cats = await remote.categoriesSince(catsSince);
     for (final c in cats) {
       await repo.applyRemoteCategory(c);
     }
-    final arts = await remote.articlesSince(since);
+    await _advanceCursor(_categoriesCursorKey, cats.map((c) => c.updatedAt));
+
+    final artsSince = _cursor(_articlesCursorKey);
+    final arts = await remote.articlesSince(artsSince);
     for (final a in arts) {
       await repo.applyRemoteArticle(a);
     }
-    await _downloadMissingImages();
+    await _advanceCursor(_articlesCursorKey, arts.map((a) => a.updatedAt));
 
-    final stamps = [...cats.map((c) => c.updatedAt), ...arts.map((a) => a.updatedAt)];
-    if (stamps.isNotEmpty) {
-      final newest = stamps.reduce((a, b) => a.isAfter(b) ? a : b);
-      await prefs.setString(_cursorKey, newest.toIso8601String());
-    }
+    await _downloadMissingImages();
+  }
+
+  DateTime? _cursor(String key) {
+    final raw = prefs.getString(key);
+    return raw == null ? null : DateTime.parse(raw);
+  }
+
+  Future<void> _advanceCursor(String key, Iterable<DateTime> stamps) async {
+    if (stamps.isEmpty) return;
+    final newest = stamps.reduce((a, b) => a.isAfter(b) ? a : b);
+    await prefs.setString(key, newest.toIso8601String());
   }
 
   Future<void> _downloadMissingImages() async {
