@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/remote_store.dart';
 import '../data/repository.dart';
 import '../data/sync_service.dart';
+import '../logic/article_saver.dart';
 import 'cloud_api.dart';
 import 'ocr_service.dart';
 import 'quota_service.dart';
@@ -22,6 +23,7 @@ class Services {
     required this.ocr,
     required this.translate,
     required this.quota,
+    required this.saver,
   });
 
   final String libraryId;
@@ -32,6 +34,7 @@ class Services {
   final OcrService ocr;
   final TranslateService translate;
   final QuotaService quota;
+  final ArticleSaver saver;
 
   static Future<Services> create({
     required String libraryId,
@@ -44,6 +47,7 @@ class Services {
     final imageDir = p.join(docs.path, 'images');
     final repo = Repository(db);
     final cloud = SupabaseCloudApi(client, libraryId);
+    final translate = TranslateService(mlkit: mlkitTranslate, cloud: cloud);
     return Services(
       libraryId: libraryId,
       userId: userId,
@@ -56,11 +60,18 @@ class Services {
         imageDir: imageDir,
       ),
       ocr: OcrService(mlkit: mlkitRecognize, cloud: cloud),
-      translate: TranslateService(mlkit: mlkitTranslate, cloud: cloud),
+      translate: translate,
       quota: QuotaService(
         fetchRows: () async =>
             await client.rpc('get_quota', params: {'lib': libraryId}) as List<dynamic>,
         prefs: prefs,
+      ),
+      saver: ArticleSaver(
+        repo: repo,
+        translator: translate,
+        libraryId: libraryId,
+        userId: userId,
+        imageDir: imageDir,
       ),
     );
   }
