@@ -19,9 +19,13 @@ class QuotaService {
       await prefs.setString(_cacheKey, jsonEncode(q.toJson()));
       return q;
     } catch (_) {
-      final cached = prefs.getString(_cacheKey);
-      if (cached == null) return null;
-      return Quota.fromRpc(Map<String, dynamic>.from(jsonDecode(cached) as Map));
+      try {
+        final cached = prefs.getString(_cacheKey);
+        if (cached == null) return null;
+        return Quota.fromRpc(Map<String, dynamic>.from(jsonDecode(cached) as Map));
+      } catch (_) {
+        return null;
+      }
     }
   }
 }

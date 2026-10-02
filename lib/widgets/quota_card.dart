@@ -35,7 +35,7 @@ class _QuotaCardState extends State<QuotaCard> {
                 const SizedBox(height: 4),
                 if (snap.connectionState != ConnectionState.done)
                   const LinearProgressIndicator()
-                else if (q == null)
+                else if (snap.hasError || q == null)
                   Text(context.t('quota_unknown'))
                 else ...[
                   Text(context.t('quota_ocr', {

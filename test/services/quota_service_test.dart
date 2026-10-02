@@ -39,4 +39,14 @@ void main() {
     ).fetch();
     expect(q, isNull);
   });
+
+  test('offline with corrupted cache returns null instead of throwing', () async {
+    SharedPreferences.setMockInitialValues({'quota_cache': 'not valid json'});
+    final prefs = await SharedPreferences.getInstance();
+    final q = await QuotaService(
+      fetchRows: () async => throw Exception('offline'),
+      prefs: prefs,
+    ).fetch();
+    expect(q, isNull);
+  });
 }
