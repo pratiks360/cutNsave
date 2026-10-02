@@ -10,6 +10,7 @@ import '../data/sync_service.dart';
 import '../logic/article_saver.dart';
 import 'cloud_api.dart';
 import 'ocr_service.dart';
+import 'pdf_service.dart';
 import 'quota_service.dart';
 import 'translate_service.dart';
 
@@ -24,6 +25,7 @@ class Services {
     required this.translate,
     required this.quota,
     required this.saver,
+    required this.pdf,
   });
 
   final String libraryId;
@@ -35,6 +37,7 @@ class Services {
   final TranslateService translate;
   final QuotaService quota;
   final ArticleSaver saver;
+  final PdfService pdf;
 
   static Future<Services> create({
     required String libraryId,
@@ -73,6 +76,7 @@ class Services {
         userId: userId,
         imageDir: imageDir,
       ),
+      pdf: PdfService(),
     );
   }
 }
