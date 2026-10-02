@@ -1,0 +1,15 @@
+# Normalize line endings to LF in the repository regardless of OS checkout
+# settings (this project is built from both native Windows and WSL2, which
+# had mismatched core.autocrlf — this file is the single source of truth).
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.jar binary
+*.keystore binary
+*.jks binary
