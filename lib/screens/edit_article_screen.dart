@@ -95,35 +95,42 @@ class _EditArticleScreenState extends State<EditArticleScreen> {
   Future<void> _save() async {
     final willTranslate = _translate && _lang != 'en';
     setState(() => _busy = context.tr(willTranslate ? 'translating' : 'save'));
-    final SaveOutcome outcome;
-    final existing = widget.article;
-    if (existing == null) {
-      outcome = await _s.saver.saveNew(
-        tempImagePath: widget.imagePath!,
-        text: _text.text,
-        lang: _lang,
-        categoryId: _categoryId,
-        translate: willTranslate,
-      );
-    } else {
-      outcome = await _s.saver.updateExisting(
-        existing,
-        text: _text.text,
-        lang: _lang,
-        categoryId: _categoryId,
-        translate: willTranslate,
-      );
-    }
-    unawaited(_s.sync.trySync());
-    if (!mounted) return;
-    if (outcome.translationPending) {
+    try {
+      final SaveOutcome outcome;
+      final existing = widget.article;
+      if (existing == null) {
+        outcome = await _s.saver.saveNew(
+          tempImagePath: widget.imagePath!,
+          text: _text.text,
+          lang: _lang,
+          categoryId: _categoryId,
+          translate: willTranslate,
+        );
+      } else {
+        outcome = await _s.saver.updateExisting(
+          existing,
+          text: _text.text,
+          lang: _lang,
+          categoryId: _categoryId,
+          translate: willTranslate,
+        );
+      }
+      unawaited(_s.sync.trySync());
+      if (!mounted) return;
+      if (outcome.translationPending) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(context.tr('translate_later'))));
+      }
+      if (_isNew) {
+        Navigator.of(context).popUntil((r) => r.isFirst);
+      } else {
+        Navigator.of(context).pop(true);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = null);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(context.tr('translate_later'))));
-    }
-    if (_isNew) {
-      Navigator.of(context).popUntil((r) => r.isFirst);
-    } else {
-      Navigator.of(context).pop(true);
+          .showSnackBar(SnackBar(content: Text(context.tr('error_generic'))));
     }
   }
 
