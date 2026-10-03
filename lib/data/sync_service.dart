@@ -23,6 +23,11 @@ class SyncService extends ChangeNotifier {
   static const _categoriesCursorKey = 'last_pull_categories';
   static const _articlesCursorKey = 'last_pull_articles';
 
+  // How long to wait before retrying a missing-image download that just
+  // failed (e.g. the image was never uploaded, or the device is offline),
+  // instead of re-attempting it on every single sync.
+  static const _imageRetryBackoff = Duration(minutes: 15);
+
   Future<void>? _inFlight;
 
   /// True once a `trySync()` attempt has failed and no later attempt has
@@ -62,8 +67,16 @@ class SyncService extends ChangeNotifier {
 
   Future<void> _push() async {
     for (final c in await repo.dirtyCategories()) {
-      await remote.upsertCategory(c);
-      await repo.markClean('categories', c.id, c.updatedAt);
+      final survivorId = await remote.upsertCategory(c);
+      if (survivorId == c.id) {
+        await repo.markClean('categories', c.id, c.updatedAt);
+      } else {
+        // Server-side dedup merged this category into an existing one with
+        // the same name (see mergeCategoryId doc comment); c.id never
+        // actually landed server-side, so there's nothing to mark clean -
+        // drop it locally and repoint any articles that used it.
+        await repo.mergeCategoryId(c.id, survivorId);
+      }
     }
     for (final a in await repo.dirtyArticles()) {
       final path = a.imagePath;
@@ -106,14 +119,17 @@ class SyncService extends ChangeNotifier {
 
   Future<void> _downloadMissingImages() async {
     await Directory(imageDir).create(recursive: true);
-    for (final a in await repo.articlesNeedingImage()) {
+    final retryNotBefore = DateTime.now().toUtc().subtract(_imageRetryBackoff);
+    for (final a in await repo.articlesNeedingImage(retryNotBefore: retryNotBefore)) {
       try {
         final bytes = await remote.downloadImage(a.remoteImagePath);
         final file = File(p.join(imageDir, '${a.id}.jpg'));
         await file.writeAsBytes(bytes);
         await repo.setImagePath(a.id, file.path);
       } catch (_) {
-        // image not uploaded yet or offline; retried on next sync
+        // image not uploaded yet or offline; back off and retry later
+        // (see _imageRetryBackoff) instead of hammering this on every sync.
+        await repo.markImageDownloadFailed(a.id, DateTime.now().toUtc());
       }
     }
   }

@@ -24,9 +24,15 @@ class FakeRemote implements RemoteStore {
   int upsertArticleCalls = 0;
 
   @override
-  Future<void> upsertCategory(Category c) async {
+  Future<String> upsertCategory(Category c) async {
     upsertCategoryCalls++;
+    // Mimics the server's dedup-on-sync: a live category with the same
+    // name under a different id already "exists" -> merge into it instead
+    // of adding a duplicate.
+    final dup = cats.where((o) => o.id != c.id && o.name.toLowerCase() == c.name.toLowerCase());
+    if (dup.isNotEmpty) return dup.first.id;
     cats.add(c);
+    return c.id;
   }
   @override
   Future<void> upsertArticle(Article a) async {
@@ -200,6 +206,50 @@ void main() {
     expect(notified, 1);
   });
 
+  test('a category name collision on push merges into the existing remote '
+      'category and repoints local articles', () async {
+    // Another device already synced a category with this name under a
+    // different id.
+    remote.cats.add(Category(id: 'server-cat', libraryId: 'lib', name: 'Recipes'));
+    // This device independently created its own (case-insensitively
+    // duplicate) category offline, and an article already filed under it.
+    await repo.upsertCategory(Category(id: 'local-cat', libraryId: 'lib', name: 'RECIPES'));
+    await repo.upsertArticle(Article(
+      id: 'a1',
+      libraryId: 'lib',
+      categoryId: 'local-cat',
+      originalText: 'x',
+      originalLang: 'mr',
+      scannedAt: DateTime.utc(2026, 1, 1),
+    ));
+
+    await sync.sync();
+
+    // local-cat never actually landed server-side (the push was merged into
+    // server-cat instead), so it must not linger locally either.
+    expect((await repo.categories()).map((c) => c.id), isNot(contains('local-cat')));
+    // The article that referenced it now points at the surviving id.
+    expect((await repo.article('a1'))!.categoryId, 'server-cat');
+    expect(await repo.dirtyCategories(), isEmpty);
+    expect(await repo.dirtyArticles(), isEmpty);
+  });
+
+  test('a failing image download is backed off, not retried every sync', () async {
+    // Local-only article with no image yet (never synced its image, or the
+    // remote image was never uploaded) and a remote that always 404s.
+    await repo.upsertArticle(art('a1'), dirty: false);
+    final failingDownload = _FailingDownloadRemote();
+    final s = SyncService(repo: repo, remote: failingDownload, prefs: prefs, imageDir: dir.path);
+
+    await s.sync();
+    expect(failingDownload.downloadCalls, 1);
+
+    // A second sync run immediately after must not retry: the backoff
+    // window (_imageRetryBackoff) hasn't elapsed yet.
+    await s.sync();
+    expect(failingDownload.downloadCalls, 1);
+  });
+
   test('hasPendingFailure clears on the next successful trySync', () async {
     await repo.upsertArticle(art('a1'));
     final remoteThatFailsOnce = _FailsOnceThenWorks();
@@ -219,6 +269,15 @@ void main() {
 class _Throwing extends FakeRemote {
   @override
   Future<void> upsertArticle(Article a) async => throw Exception('offline');
+}
+
+class _FailingDownloadRemote extends FakeRemote {
+  int downloadCalls = 0;
+  @override
+  Future<Uint8List> downloadImage(String remotePath) async {
+    downloadCalls++;
+    throw Exception('404');
+  }
 }
 
 class _FailsOnceThenWorks extends FakeRemote {

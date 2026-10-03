@@ -11,7 +11,12 @@ const _networkTimeout = Duration(seconds: 20);
 const _transferTimeout = Duration(seconds: 60);
 
 abstract class RemoteStore {
-  Future<void> upsertCategory(Category c);
+  /// Returns the id of the category row that ends up representing [c] on
+  /// the server: normally [c.id], but a different, pre-existing id if the
+  /// server-side dedup-on-sync in upsert_category (see
+  /// 20261005000000_category_dedup.sql) merged this insert into an existing
+  /// category with the same name instead of inserting a duplicate.
+  Future<String> upsertCategory(Category c);
   Future<void> upsertArticle(Article a);
   Future<void> uploadImage(String remotePath, File file);
   Future<Uint8List> downloadImage(String remotePath);
@@ -24,9 +29,12 @@ class SupabaseRemoteStore implements RemoteStore {
   final SupabaseClient _client;
 
   @override
-  Future<void> upsertCategory(Category c) => _client
-      .rpc('upsert_category', params: _categoryParams(c))
-      .timeout(_networkTimeout, onTimeout: () => throw TimeoutException('upsertCategory timed out'));
+  Future<String> upsertCategory(Category c) async {
+    final res = await _client
+        .rpc('upsert_category', params: _categoryParams(c))
+        .timeout(_networkTimeout, onTimeout: () => throw TimeoutException('upsertCategory timed out'));
+    return res as String;
+  }
 
   @override
   Future<void> upsertArticle(Article a) => _client

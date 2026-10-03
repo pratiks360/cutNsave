@@ -5,7 +5,7 @@ class LocalDb {
     return factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         singleInstance: false,
         onCreate: (db, _) async {
           await db.execute('''
@@ -30,8 +30,17 @@ class LocalDb {
               created_by TEXT,
               updated_at TEXT NOT NULL,
               deleted INTEGER NOT NULL DEFAULT 0,
-              dirty INTEGER NOT NULL DEFAULT 0
+              dirty INTEGER NOT NULL DEFAULT 0,
+              image_download_failed_at TEXT
             )''');
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          // v1 -> v2: backoff bookkeeping for sync_service's missing-image
+          // downloads, so a persistently-failing download (e.g. the image
+          // was never uploaded) isn't retried on every single sync.
+          if (oldVersion < 2) {
+            await db.execute('ALTER TABLE articles ADD COLUMN image_download_failed_at TEXT');
+          }
         },
       ),
     );
