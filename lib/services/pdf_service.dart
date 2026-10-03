@@ -20,6 +20,11 @@ class PdfService {
         ? base64Encode(await File(path).readAsBytes())
         : null;
     final html = buildArticleHtml(article: a, imageBase64: image);
+    // printing 5.15.1 deprecated convertHtml with no replacement that still
+    // renders via a platform WebView (needed for Devanagari conjunct
+    // shaping — the pure-Dart `pdf` package can't do that). Deliberate,
+    // documented choice; suppressed rather than worked around.
+    // ignore: deprecated_member_use
     final bytes = await Printing.convertHtml(format: PdfPageFormat.a4, html: html);
     final dir = await getTemporaryDirectory();
     final day = DateFormat('yyyy-MM-dd').format(a.scannedAt.toLocal());
