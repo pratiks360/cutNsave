@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
-import '../logic/ocr_policy.dart';
 import 'cloud_api.dart';
 
 enum CloudSkip { quota, offline, tooLong }
@@ -26,26 +25,29 @@ class OcrService {
   final CloudApi cloud;
   final Future<Uint8List> Function(String path) readBytes;
 
+  // Cloud Vision is tried first (better accuracy, worth the quota cost for
+  // this family's volume); on-device ML Kit is the fallback when Cloud
+  // Vision can't be reached or the family's monthly quota is used up, so a
+  // scan still produces something instead of failing outright.
   Future<OcrResult> recognize(String imagePath) async {
-    String local;
-    try {
-      local = await mlkit(imagePath);
-    } catch (_) {
-      // ML Kit threw (platform exception, decode failure, ...). This points at
-      // a bad/unsupported image rather than a network issue, so cloud OCR is
-      // unlikely to help either; fail soft instead of propagating and hanging
-      // the caller's UI.
-      return const OcrResult('', skip: CloudSkip.offline);
-    }
-    if (!needsCloud(local)) return OcrResult(local);
+    CloudSkip? skip;
     try {
       final text = await cloud.ocr(await readBytes(imagePath));
-      if (text.trim().isEmpty) return OcrResult(local);
-      return OcrResult(text, usedCloud: true);
+      if (text.trim().isNotEmpty) return OcrResult(text, usedCloud: true);
+      // Cloud succeeded but returned nothing usable -- fall through to
+      // on-device without treating this as a quota/connectivity skip.
     } on QuotaExceeded {
-      return OcrResult(local, skip: CloudSkip.quota);
+      skip = CloudSkip.quota;
     } catch (_) {
-      return OcrResult(local, skip: CloudSkip.offline);
+      skip = CloudSkip.offline;
+    }
+    try {
+      final local = await mlkit(imagePath);
+      return OcrResult(local, skip: skip);
+    } catch (_) {
+      // ML Kit threw too (platform exception, decode failure, ...): fail
+      // soft instead of propagating and hanging the caller's UI.
+      return OcrResult('', skip: skip ?? CloudSkip.offline);
     }
   }
 }
