@@ -79,11 +79,14 @@ class SyncService extends ChangeNotifier {
           // drop it locally and repoint any articles that used it.
           await repo.mergeCategoryId(c.id, survivorId);
         }
-      } catch (e) {
+      } on Exception catch (e) {
         // Don't let one stuck category (e.g. a rename collision nothing
         // auto-resolves) block every other unrelated dirty row in this
         // pass. Leave it dirty and keep going; trySync() still surfaces
-        // the overall failure via hasPendingFailure below.
+        // the overall failure via hasPendingFailure below. Catching only
+        // Exception (not Error) so a genuine programming bug -- a
+        // TypeError, a failed assertion -- propagates loudly instead of
+        // being silently logged and treated like a transient network blip.
         anyFailed = true;
         debugPrint('SyncService: failed to push category ${c.id}: $e');
       }
@@ -96,10 +99,11 @@ class SyncService extends ChangeNotifier {
         }
         await remote.upsertArticle(a);
         await repo.markClean('articles', a.id, a.updatedAt);
-      } catch (e) {
+      } on Exception catch (e) {
         // Same isolation as above: a single bad article row (e.g. one
         // referencing a category that failed to push, or a transient
-        // network blip) must not stop the rest of the queue.
+        // network blip) must not stop the rest of the queue. Same
+        // Exception-only scoping as above, for the same reason.
         anyFailed = true;
         debugPrint('SyncService: failed to push article ${a.id}: $e');
       }
