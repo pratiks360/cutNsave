@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cutnsave/services/update_service.dart';
@@ -41,5 +42,35 @@ void main() {
 
   test('throws on server error', () async {
     expect(() => svc(client(500, {})).latestIfNewer(), throwsException);
+  });
+
+  test('latestIfNewer throws within a bounded time when the request hangs', () async {
+    final hanging = MockClient((_) => Completer<http.Response>().future);
+    final service = UpdateService(
+      client: hanging,
+      repoSlug: 'me/cutNsave',
+      installedVersion: '1.0.0',
+      timeout: const Duration(milliseconds: 50),
+    );
+    await expectLater(
+      service.latestIfNewer().timeout(const Duration(seconds: 5)),
+      throwsA(isA<TimeoutException>()),
+    );
+  });
+
+  test('download throws within a bounded time when the request hangs', () async {
+    final hanging = MockClient.streaming((_, bodyStream) => Completer<http.StreamedResponse>().future);
+    final service = UpdateService(
+      client: hanging,
+      repoSlug: 'me/cutNsave',
+      installedVersion: '1.0.0',
+      timeout: const Duration(milliseconds: 50),
+    );
+    await expectLater(
+      service.download(UpdateInfo('v1.1.0', Uri.parse('https://x/cutnsave.apk'))).timeout(
+            const Duration(seconds: 5),
+          ),
+      throwsA(isA<TimeoutException>()),
+    );
   });
 }

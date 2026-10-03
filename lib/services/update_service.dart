@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -19,17 +20,24 @@ class UpdateService {
     required this.client,
     required this.repoSlug,
     required this.installedVersion,
+    this.timeout = const Duration(seconds: 20),
   });
 
   final http.Client client;
   final String repoSlug;
   final String installedVersion;
 
+  /// Bound on each individual network call below. Overridable for tests so
+  /// they don't have to wait out a real-world timeout.
+  final Duration timeout;
+
   Future<UpdateInfo?> latestIfNewer() async {
-    final res = await client.get(
-      Uri.parse('https://api.github.com/repos/$repoSlug/releases/latest'),
-      headers: {'Accept': 'application/vnd.github+json'},
-    );
+    final res = await client
+        .get(
+          Uri.parse('https://api.github.com/repos/$repoSlug/releases/latest'),
+          headers: {'Accept': 'application/vnd.github+json'},
+        )
+        .timeout(timeout, onTimeout: () => throw TimeoutException('update check timed out'));
     if (res.statusCode == 404) return null;
     if (res.statusCode != 200) {
       throw Exception('GitHub returned ${res.statusCode}');
@@ -44,10 +52,15 @@ class UpdateService {
   }
 
   Future<File> download(UpdateInfo info, {void Function(double)? onProgress}) async {
+    // Network call first, so a hang/timeout surfaces before we ever touch
+    // the filesystem (also keeps the timeout bound testable without a real
+    // path_provider platform binding).
+    final res = await client
+        .send(http.Request('GET', info.apkUrl))
+        .timeout(timeout, onTimeout: () => throw TimeoutException('update download timed out'));
+    if (res.statusCode != 200) throw Exception('Download failed (${res.statusCode})');
     final dir = await getTemporaryDirectory();
     final file = File(p.join(dir.path, 'cutnsave-${info.tag}.apk'));
-    final res = await client.send(http.Request('GET', info.apkUrl));
-    if (res.statusCode != 200) throw Exception('Download failed (${res.statusCode})');
     final total = res.contentLength ?? 0;
     var received = 0;
     final sink = file.openWrite();
