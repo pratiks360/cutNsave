@@ -77,6 +77,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    // Deliberately NOT clearing the local SQLite DB, sync cursors, or quota
+    // cache here. This deployment is one shared family library per app
+    // install (bootstrap_library() refuses to create a second library once
+    // one exists for this install's members), so every account that can
+    // sign into this install ends up pointed at the *same* library_id - the
+    // next sign-in (same family member, or another member of the same
+    // family) just resumes against data that's already correct for them.
+    // Wiping it on sign-out would only force a full image/article
+    // re-download on the next sign-in, with no privacy or correctness
+    // benefit. Revisit this if the app ever supports switching between
+    // libraries/accounts on one device.
     await auth.signOut();
     await prefs.remove('library_id');
     libraryId = null;
