@@ -36,6 +36,8 @@ class TranslateService {
       return const TranslateResult(null);
     } on QuotaExceeded {
       return const TranslateResult(null, skip: CloudSkip.quota);
+    } on TextTooLong {
+      return const TranslateResult(null, skip: CloudSkip.tooLong);
     } catch (_) {
       return const TranslateResult(null, skip: CloudSkip.offline);
     }

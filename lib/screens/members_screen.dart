@@ -41,8 +41,8 @@ class _MembersScreenState extends State<MembersScreen> {
           _owner = _svc.isOwnerIn(list);
         });
       }
-    } catch (e) {
-      if (mounted) setState(() => _error = '$e');
+    } catch (_) {
+      if (mounted) setState(() => _error = context.tr('error_generic'));
     }
   }
 
@@ -57,8 +57,8 @@ class _MembersScreenState extends State<MembersScreen> {
       _email.clear();
       _error = null;
       await _load();
-    } catch (e) {
-      setState(() => _error = '$e');
+    } catch (_) {
+      setState(() => _error = context.tr('error_generic'));
     }
   }
 
@@ -66,8 +66,8 @@ class _MembersScreenState extends State<MembersScreen> {
     try {
       await _svc.remove(email);
       await _load();
-    } catch (e) {
-      setState(() => _error = '$e');
+    } catch (_) {
+      setState(() => _error = context.tr('error_generic'));
     }
   }
 

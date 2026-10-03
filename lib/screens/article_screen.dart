@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models.dart';
+import '../services/ocr_service.dart' show CloudSkip;
 import '../services/services.dart';
 import '../state/app_state.dart';
 import 'edit_article_screen.dart';
@@ -33,11 +34,18 @@ class _ArticleScreenState extends State<ArticleScreen> {
 
   Future<void> _load() async {
     final a = await _s.repo.article(widget.articleId);
+    if (a == null) {
+      // Article was deleted elsewhere (or a sync race) between the list
+      // showing it and this screen loading it: there's nothing to display,
+      // so back out instead of spinning forever.
+      if (mounted) Navigator.pop(context);
+      return;
+    }
     final cats = await _s.repo.categories();
     if (!mounted) return;
     setState(() {
       _article = a;
-      _categoryName = cats.where((c) => c.id == a?.categoryId).map((c) => c.name).firstOrNull;
+      _categoryName = cats.where((c) => c.id == a.categoryId).map((c) => c.name).firstOrNull;
     });
   }
 
@@ -45,10 +53,10 @@ class _ArticleScreenState extends State<ArticleScreen> {
     setState(() => _sharing = true);
     try {
       await _s.pdf.share(_article!);
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('${context.tr('error_generic')}: $e')));
+            .showSnackBar(SnackBar(content: Text(context.tr('error_generic'))));
       }
     } finally {
       if (mounted) setState(() => _sharing = false);
@@ -63,8 +71,10 @@ class _ArticleScreenState extends State<ArticleScreen> {
       if (!mounted) return;
       setState(() => _article = outcome.article);
       if (outcome.translationPending) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(context.tr('translate_later'))));
+        final key = outcome.translationSkip == CloudSkip.tooLong
+            ? 'translate_too_long'
+            : 'translate_later';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.tr(key))));
       }
     } catch (_) {
       if (mounted) {
@@ -140,7 +150,7 @@ class _ArticleScreenState extends State<ArticleScreen> {
             const SizedBox(height: 16),
             Text(context.t('english_text'), style: Theme.of(context).textTheme.titleMedium),
             SelectableText(a.englishText!),
-          ] else if (a.originalLang != 'en') ...[
+          ] else if (a.needsTranslatePrompt) ...[
             const SizedBox(height: 16),
             OutlinedButton.icon(
               icon: const Icon(Icons.translate),

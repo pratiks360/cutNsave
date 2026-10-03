@@ -68,4 +68,13 @@ void main() {
     expect(r.text, isNull);
     expect(r.skip, CloudSkip.offline);
   });
+
+  test('cloud rejects text as too long → pending with tooLong skip, not offline', () async {
+    final s = TranslateService(
+        mlkit: (_, _) async => throw Exception('x'),
+        cloud: FakeCloud(error: TextTooLong()));
+    final r = await s.toEnglish('नमस्कार', 'mr');
+    expect(r.text, isNull);
+    expect(r.skip, CloudSkip.tooLong);
+  });
 }

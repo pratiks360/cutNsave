@@ -23,6 +23,11 @@ class SyncService extends ChangeNotifier {
   static const _categoriesCursorKey = 'last_pull_categories';
   static const _articlesCursorKey = 'last_pull_articles';
 
+  // How long to wait before retrying a missing-image download that just
+  // failed (e.g. the image was never uploaded, or the device is offline),
+  // instead of re-attempting it on every single sync.
+  static const _imageRetryBackoff = Duration(minutes: 15);
+
   Future<void>? _inFlight;
 
   /// True once a `trySync()` attempt has failed and no later attempt has
@@ -61,17 +66,46 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<void> _push() async {
+    var anyFailed = false;
     for (final c in await repo.dirtyCategories()) {
-      await remote.upsertCategory(c);
-      await repo.markClean('categories', c.id, c.updatedAt);
+      try {
+        final survivorId = await remote.upsertCategory(c);
+        if (survivorId == c.id) {
+          await repo.markClean('categories', c.id, c.updatedAt);
+        } else {
+          // Server-side dedup merged this category into an existing one with
+          // the same name (see mergeCategoryId doc comment); c.id never
+          // actually landed server-side, so there's nothing to mark clean -
+          // drop it locally and repoint any articles that used it.
+          await repo.mergeCategoryId(c.id, survivorId);
+        }
+      } catch (e) {
+        // Don't let one stuck category (e.g. a rename collision nothing
+        // auto-resolves) block every other unrelated dirty row in this
+        // pass. Leave it dirty and keep going; trySync() still surfaces
+        // the overall failure via hasPendingFailure below.
+        anyFailed = true;
+        debugPrint('SyncService: failed to push category ${c.id}: $e');
+      }
     }
     for (final a in await repo.dirtyArticles()) {
-      final path = a.imagePath;
-      if (path != null && !a.deleted && File(path).existsSync()) {
-        await remote.uploadImage(a.remoteImagePath, File(path));
+      try {
+        final path = a.imagePath;
+        if (path != null && !a.deleted && File(path).existsSync()) {
+          await remote.uploadImage(a.remoteImagePath, File(path));
+        }
+        await remote.upsertArticle(a);
+        await repo.markClean('articles', a.id, a.updatedAt);
+      } catch (e) {
+        // Same isolation as above: a single bad article row (e.g. one
+        // referencing a category that failed to push, or a transient
+        // network blip) must not stop the rest of the queue.
+        anyFailed = true;
+        debugPrint('SyncService: failed to push article ${a.id}: $e');
       }
-      await remote.upsertArticle(a);
-      await repo.markClean('articles', a.id, a.updatedAt);
+    }
+    if (anyFailed) {
+      throw Exception('_push: one or more rows failed to push');
     }
   }
 
@@ -106,14 +140,17 @@ class SyncService extends ChangeNotifier {
 
   Future<void> _downloadMissingImages() async {
     await Directory(imageDir).create(recursive: true);
-    for (final a in await repo.articlesNeedingImage()) {
+    final retryNotBefore = DateTime.now().toUtc().subtract(_imageRetryBackoff);
+    for (final a in await repo.articlesNeedingImage(retryNotBefore: retryNotBefore)) {
       try {
         final bytes = await remote.downloadImage(a.remoteImagePath);
         final file = File(p.join(imageDir, '${a.id}.jpg'));
         await file.writeAsBytes(bytes);
         await repo.setImagePath(a.id, file.path);
       } catch (_) {
-        // image not uploaded yet or offline; retried on next sync
+        // image not uploaded yet or offline; back off and retry later
+        // (see _imageRetryBackoff) instead of hammering this on every sync.
+        await repo.markImageDownloadFailed(a.id, DateTime.now().toUtc());
       }
     }
   }

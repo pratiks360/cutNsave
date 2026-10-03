@@ -14,6 +14,14 @@ class QuotaExceeded implements Exception {
   String toString() => 'QuotaExceeded';
 }
 
+/// Thrown when the translate Edge Function rejects the text as too long
+/// (HTTP 413). Distinct from a generic failure so callers can tell the user
+/// why translation didn't happen instead of lumping it in with "offline".
+class TextTooLong implements Exception {
+  @override
+  String toString() => 'TextTooLong';
+}
+
 abstract class CloudApi {
   Future<String> ocr(Uint8List jpeg);
   Future<String> translate(String text, String sourceLang);
@@ -57,6 +65,7 @@ class SupabaseCloudApi implements CloudApi {
       return Map<String, dynamic>.from(res.data as Map);
     } on FunctionException catch (e) {
       if (e.status == 429) throw QuotaExceeded();
+      if (e.status == 413) throw TextTooLong();
       rethrow;
     }
   }

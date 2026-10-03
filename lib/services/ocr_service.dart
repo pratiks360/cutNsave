@@ -6,7 +6,7 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import '../logic/ocr_policy.dart';
 import 'cloud_api.dart';
 
-enum CloudSkip { quota, offline }
+enum CloudSkip { quota, offline, tooLong }
 
 class OcrResult {
   const OcrResult(this.text, {this.usedCloud = false, this.skip});

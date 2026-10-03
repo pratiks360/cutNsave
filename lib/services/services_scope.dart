@@ -16,13 +16,17 @@ class ServicesScope extends StatefulWidget {
 }
 
 class _ServicesScopeState extends State<ServicesScope> {
-  late final Future<Services> _future;
+  late Future<Services> _future;
 
   @override
   void initState() {
     super.initState();
+    _future = _create();
+  }
+
+  Future<Services> _create() {
     final app = context.read<AppState>();
-    _future = Services.create(
+    return Services.create(
       libraryId: app.libraryId!,
       userId: app.userId,
       db: context.read<Database>(),
@@ -31,11 +35,33 @@ class _ServicesScopeState extends State<ServicesScope> {
     );
   }
 
+  void _retry() => setState(() => _future = _create());
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Services>(
       future: _future,
       builder: (context, snap) {
+        // Mirrors Gate's AuthStatus.error handling in app.dart: a generic
+        // message plus a retry button instead of hanging on a spinner
+        // forever when Services.create() fails (e.g. a DB/open error).
+        if (snap.hasError) {
+          return Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(context.tr('error_generic')),
+                    const SizedBox(height: 16),
+                    FilledButton(onPressed: _retry, child: Text(context.tr('retry'))),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
         if (!snap.hasData) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }

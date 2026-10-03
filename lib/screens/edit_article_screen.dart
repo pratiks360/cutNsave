@@ -125,8 +125,10 @@ class _EditArticleScreenState extends State<EditArticleScreen> {
       unawaited(_s.sync.trySync());
       if (!mounted) return;
       if (outcome.translationPending) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(context.tr('translate_later'))));
+        final key = outcome.translationSkip == CloudSkip.tooLong
+            ? 'translate_too_long'
+            : 'translate_later';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.tr(key))));
       }
       if (_isNew) {
         Navigator.of(context).popUntil((r) => r.isFirst);

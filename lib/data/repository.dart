@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
@@ -32,6 +34,23 @@ class Repository {
       (await _db.query('categories', where: 'dirty = 1'))
           .map(Category.fromLocal)
           .toList();
+
+  /// Reconciles a category id this device pushed with the surviving id the
+  /// server's dedup-on-sync merged it into (see upsert_category in
+  /// 20261005000000_category_dedup.sql: two offline devices independently
+  /// creating a same-named category each push their own id, and the server
+  /// keeps only one). Drops the local row for [oldId] - it was never
+  /// actually accepted on the server - and repoints any local articles that
+  /// referenced it to [newId]. The next pull picks up [newId]'s category
+  /// row itself (its client_updated_at just advanced on the server).
+  Future<void> mergeCategoryId(String oldId, String newId) async {
+    if (oldId == newId) return;
+    await _db.transaction((txn) async {
+      await txn.update('articles', {'category_id': newId},
+          where: 'category_id = ?', whereArgs: [oldId]);
+      await txn.delete('categories', where: 'id = ?', whereArgs: [oldId]);
+    });
+  }
 
   Future<void> applyRemoteCategory(Category c) async {
     final rows = await _db.query('categories',
@@ -90,16 +109,46 @@ class Repository {
     if (rows.isNotEmpty && rows.first['dirty'] == 1) return;
     final existingPath = rows.isEmpty ? null : rows.first['image_path'] as String?;
     await upsertArticle(a.copyWith(imagePath: existingPath), dirty: false);
+    if (a.deleted && existingPath != null) {
+      // The remote soft-delete is authoritative and this row is clean (just
+      // confirmed above), so the local JPEG is now unreachable dead weight;
+      // clear the path and remove the file. Best-effort: if the delete
+      // fails, the path has already been cleared so we won't retry it
+      // forever, and a stray file left on disk is harmless.
+      await _db.update('articles', {'image_path': null}, where: 'id = ?', whereArgs: [a.id]);
+      try {
+        final f = File(existingPath);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+    }
   }
 
-  Future<List<Article>> articlesNeedingImage() async =>
-      (await _db.query('articles', where: 'image_path IS NULL AND deleted = 0'))
-          .map(Article.fromLocal)
-          .toList();
+  /// Articles with no local image yet. When [retryNotBefore] is given, an
+  /// article whose last download attempt failed more recently than that is
+  /// skipped, so sync doesn't hammer a download that just failed (e.g. the
+  /// image was never uploaded) on every single sync pass.
+  Future<List<Article>> articlesNeedingImage({DateTime? retryNotBefore}) async {
+    final where = StringBuffer('image_path IS NULL AND deleted = 0');
+    final args = <Object?>[];
+    if (retryNotBefore != null) {
+      where.write(' AND (image_download_failed_at IS NULL OR image_download_failed_at <= ?)');
+      args.add(retryNotBefore.toUtc().toIso8601String());
+    }
+    return (await _db.query('articles', where: where.toString(), whereArgs: args))
+        .map(Article.fromLocal)
+        .toList();
+  }
 
   Future<void> setImagePath(String id, String path) => _db.update(
         'articles',
-        {'image_path': path},
+        {'image_path': path, 'image_download_failed_at': null},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+  Future<void> markImageDownloadFailed(String id, DateTime at) => _db.update(
+        'articles',
+        {'image_download_failed_at': at.toUtc().toIso8601String()},
         where: 'id = ?',
         whereArgs: [id],
       );

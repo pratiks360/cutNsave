@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cutnsave/data/local_db.dart';
 import 'package:cutnsave/data/models.dart';
 import 'package:cutnsave/data/repository.dart';
@@ -30,6 +32,12 @@ void main() {
     final a = await repo.article('a1');
     expect(a!.originalText, 'नमस्कार');
     expect(a.englishText, 'Hello');
+  });
+
+  test('englishDeclined persists through the real sqlite column', () async {
+    final declined = art('a1').copyWith(englishDeclined: true);
+    await repo.upsertArticle(declined);
+    expect((await repo.article('a1'))!.englishDeclined, isTrue);
   });
 
   test('articles are newest-scanned first and exclude deleted', () async {
@@ -104,5 +112,33 @@ void main() {
     await repo.setImagePath('a1', '/img/a1.jpg');
     expect(await repo.articlesNeedingImage(), isEmpty);
     expect(await repo.dirtyArticles(), isEmpty);
+  });
+
+  test('articlesNeedingImage backs off a recently-failed download', () async {
+    await repo.upsertArticle(art('a1'), dirty: false);
+    await repo.markImageDownloadFailed('a1', DateTime.utc(2026, 1, 1, 12, 0));
+    // A retry cutoff before the failure: still within backoff, skipped.
+    expect(
+      await repo.articlesNeedingImage(retryNotBefore: DateTime.utc(2026, 1, 1, 11, 0)),
+      isEmpty,
+    );
+    // A retry cutoff after the failure: backoff has elapsed, eligible again.
+    expect(
+      (await repo.articlesNeedingImage(retryNotBefore: DateTime.utc(2026, 1, 1, 13, 0)))
+          .map((a) => a.id),
+      ['a1'],
+    );
+  });
+
+  test('applyRemoteArticle deletes the local image file on a remote soft-delete', () async {
+    final dir = Directory.systemTemp.createTempSync('repo_img');
+    final img = File('${dir.path}/a1.jpg')..writeAsBytesSync([1, 2, 3]);
+    await repo.upsertArticle(art('a1').copyWith(imagePath: img.path), dirty: false);
+
+    await repo.applyRemoteArticle(art('a1').copyWith(deleted: true, updatedAt: DateTime.utc(2030, 1, 1)));
+
+    expect(img.existsSync(), isFalse);
+    expect((await repo.article('a1'))!.imagePath, isNull);
+    dir.deleteSync(recursive: true);
   });
 }

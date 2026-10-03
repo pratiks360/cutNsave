@@ -1,5 +1,5 @@
 begin;
-select plan(22);
+select plan(37);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'mom@example.com'),
@@ -156,6 +156,149 @@ select is(
 select is(
   (select library_id from public.categories where id = current_setting('test.cat_b')::uuid),
   current_setting('test.lib_b')::uuid, 'cross-library upsert_category cannot reassign another library''s row');
+
+-- category dedup-on-sync: two "devices" independently create a
+-- case-insensitively duplicate category name; the second upsert_category
+-- must merge into the first instead of inserting a duplicate row (still as
+-- mom, library A).
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
+set local role authenticated;
+
+select set_config('test.cat_dup1', gen_random_uuid()::text, true);
+select is(
+  public.upsert_category(current_setting('test.cat_dup1')::uuid, current_setting('test.lib')::uuid,
+    'Groceries', null, '2026-04-01T00:00:00Z'::timestamptz),
+  current_setting('test.cat_dup1')::uuid,
+  'fresh category insert returns its own id');
+
+select set_config('test.cat_dup2', gen_random_uuid()::text, true);
+select is(
+  public.upsert_category(current_setting('test.cat_dup2')::uuid, current_setting('test.lib')::uuid,
+    'GROCERIES', null, '2026-04-02T00:00:00Z'::timestamptz),
+  current_setting('test.cat_dup1')::uuid,
+  'a case-insensitive duplicate name merges into the existing id instead of inserting');
+
+select is(
+  (select count(*)::int from public.categories where lower(name) = 'groceries'),
+  1, 'no duplicate row was created for the case-insensitive collision');
+
+select is(
+  (select count(*)::int from public.categories where id = current_setting('test.cat_dup2')::uuid),
+  0, 'the losing id was never inserted');
+
+-- a third "device" independently creates yet another case-insensitive
+-- duplicate of the same name, under a third id. upsert_category now dedupes
+-- via a single atomic INSERT ... ON CONFLICT (replacing the old
+-- SELECT-then-INSERT), so this proves the merge path isn't limited to a
+-- one-shot "first collision only" special case -- repeated colliding
+-- inserts keep merging into the same original survivor.
+select set_config('test.cat_dup3', gen_random_uuid()::text, true);
+select is(
+  public.upsert_category(current_setting('test.cat_dup3')::uuid, current_setting('test.lib')::uuid,
+    'groceries', null, '2026-04-04T00:00:00Z'::timestamptz),
+  current_setting('test.cat_dup1')::uuid,
+  'a second, later collision from a third id also merges into the original survivor');
+select is(
+  (select count(*)::int from public.categories where lower(name) = 'groceries'),
+  1, 'still only one row after the second colliding insert');
+
+-- same id, colliding (different-case) name pushed again by the same caller:
+-- this takes the UPDATE-existing-row branch (the id already exists), not
+-- the INSERT ... ON CONFLICT branch, and must not raise 23505 either.
+select lives_ok(
+  $$select public.upsert_category(current_setting('test.cat_dup1')::uuid, current_setting('test.lib')::uuid,
+    'GROCERIES', null, '2026-04-05T00:00:00Z'::timestamptz)$$,
+  'same id + colliding-case name from the same caller updates in place without erroring');
+select is(
+  (select name from public.categories where id = current_setting('test.cat_dup1')::uuid),
+  'GROCERIES', 'the in-place update applied the new casing to the survivor row');
+
+-- dedup is scoped to library_id: the same name in a DIFFERENT library (dave,
+-- library B) must insert its own row, never merge into library A's
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d4","email":"dave@example.com","role":"authenticated"}', true);
+set local role authenticated;
+select set_config('test.cat_dup_b', gen_random_uuid()::text, true);
+select is(
+  public.upsert_category(current_setting('test.cat_dup_b')::uuid, current_setting('test.lib_b')::uuid,
+    'Groceries', null, '2026-04-03T00:00:00Z'::timestamptz),
+  current_setting('test.cat_dup_b')::uuid,
+  'a same-named category in a different library inserts its own row, not a cross-library merge');
+
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
+set local role authenticated;
+
+-- articles.created_by is stamped from the caller's auth.uid(), not trusted
+-- from the client, and is immutable across updates (still as mom).
+select set_config('test.art_cb', gen_random_uuid()::text, true);
+select public.upsert_article(
+  current_setting('test.art_cb')::uuid, current_setting('test.lib')::uuid, null, null,
+  'authored', 'mr', null, now(),
+  '00000000-0000-0000-0000-0000000000d4', -- client dishonestly claims dave as author
+  null, '2026-05-01T00:00:00Z'::timestamptz);
+select is(
+  (select created_by from public.articles where id = current_setting('test.art_cb')::uuid),
+  '00000000-0000-0000-0000-0000000000a1'::uuid,
+  'server stamps created_by from the caller, ignoring the client-supplied value');
+
+select public.upsert_article(
+  current_setting('test.art_cb')::uuid, current_setting('test.lib')::uuid, null, null,
+  'authored v2', 'mr', null, now(),
+  '00000000-0000-0000-0000-0000000000b2', -- client now claims sis as author
+  null, '2026-05-02T00:00:00Z'::timestamptz);
+select is(
+  (select created_by from public.articles where id = current_setting('test.art_cb')::uuid),
+  '00000000-0000-0000-0000-0000000000a1'::uuid,
+  'updating an article never changes its created_by, regardless of what the client sends');
+
+-- a different member of the same library (sis) updating mom's article also
+-- cannot alter created_by, confirming this isn't just a same-caller quirk
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b2","email":"sis@example.com","role":"authenticated"}', true);
+set local role authenticated;
+select public.upsert_article(
+  current_setting('test.art_cb')::uuid, current_setting('test.lib')::uuid, null, null,
+  'authored v3 by sis', 'mr', null, now(),
+  '00000000-0000-0000-0000-0000000000b2', -- sis claims herself as author
+  null, '2026-05-03T00:00:00Z'::timestamptz);
+select is(
+  (select created_by from public.articles where id = current_setting('test.art_cb')::uuid),
+  '00000000-0000-0000-0000-0000000000a1'::uuid,
+  'a different member updating the article still cannot change its created_by from the original author');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
+set local role authenticated;
+
+-- translation_declined: a deliberate "don't translate" defaults to false on
+-- a plain insert (omitted/legacy callers), can be set true explicitly, and
+-- persists across an update that otherwise doesn't touch it - distinguishing
+-- "declined" from "pending/failed" is the whole point of this column, so a
+-- later unrelated edit must not silently clear it back to false.
+select set_config('test.art_decl', gen_random_uuid()::text, true);
+select public.upsert_article(
+  current_setting('test.art_decl')::uuid, current_setting('test.lib')::uuid, null, null,
+  'legacy caller omits p_translation_declined', 'mr', null, now(), null, null,
+  '2026-06-01T00:00:00Z'::timestamptz);
+select is(
+  (select translation_declined from public.articles where id = current_setting('test.art_decl')::uuid),
+  false, 'omitting p_translation_declined defaults to false');
+
+select public.upsert_article(
+  current_setting('test.art_decl')::uuid, current_setting('test.lib')::uuid, null, null,
+  'declined', 'mr', null, now(), null, null, '2026-06-02T00:00:00Z'::timestamptz, true);
+select is(
+  (select translation_declined from public.articles where id = current_setting('test.art_decl')::uuid),
+  true, 'an explicit decline is persisted');
+
+select public.upsert_article(
+  current_setting('test.art_decl')::uuid, current_setting('test.lib')::uuid, null, null,
+  'declined, category changed later', 'mr', null, now(), null, null,
+  '2026-06-03T00:00:00Z'::timestamptz, true);
+select is(
+  (select translation_declined from public.articles where id = current_setting('test.art_decl')::uuid),
+  true, 'a later update that still passes the decline through keeps it set');
 
 -- non-member rejected by both RPCs
 reset role;
