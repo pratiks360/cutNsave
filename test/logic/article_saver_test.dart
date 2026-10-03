@@ -74,18 +74,22 @@ void main() {
     expect(translateCalls, 0);
   });
 
-  test('translate off leaves English empty and not pending', () async {
+  test('translate off leaves English empty and not pending, and persists as declined', () async {
     final out = await saver().saveNew(
         tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: false);
     expect(out.article.englishText, isNull);
     expect(out.translationPending, isFalse);
+    expect(out.article.englishDeclined, isTrue);
+    expect(out.article.needsTranslatePrompt, isFalse);
   });
 
-  test('translation failure saves anyway and flags pending', () async {
+  test('translation failure saves anyway and flags pending, not declined', () async {
     final out = await saver(result: null).saveNew(
         tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: true);
     expect(out.translationPending, isTrue);
     expect(out.article.englishText, isNull);
+    expect(out.article.englishDeclined, isFalse);
+    expect(out.article.needsTranslatePrompt, isTrue);
     expect(await repo.article('id1'), isNotNull);
   });
 
@@ -104,13 +108,41 @@ void main() {
     expect(changed.article.categoryId, 'c2');
   });
 
-  test('updateExisting with translate off clears stale English on text change', () async {
+  test('updateExisting with translate off clears stale English on text change, marks declined',
+      () async {
     final s = saver();
     final first = await s.saveNew(
         tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: true);
     final out = await s.updateExisting(first.article,
         text: 'धन्यवाद', lang: 'mr', translate: false);
     expect(out.article.englishText, isNull);
+    expect(out.article.englishDeclined, isTrue);
+  });
+
+  test('updateExisting with translate off and unchanged text preserves prior declined state',
+      () async {
+    final s = saver();
+    final declined = await s.saveNew(
+        tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: false);
+    expect(declined.article.englishDeclined, isTrue);
+    // Editing an unrelated field (category) without touching the text or
+    // flipping the toggle back on must not change the declined bit.
+    final out = await s.updateExisting(declined.article,
+        text: 'नमस्कार', lang: 'mr', categoryId: 'c9', translate: false);
+    expect(out.article.englishText, isNull);
+    expect(out.article.englishDeclined, isTrue);
+    expect(out.article.categoryId, 'c9');
+  });
+
+  test('updateExisting re-enabling translate on an unchanged already-declined article clears it',
+      () async {
+    final s = saver();
+    final declined = await s.saveNew(
+        tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: false);
+    final out = await s.updateExisting(declined.article,
+        text: 'नमस्कार', lang: 'mr', translate: true);
+    expect(out.article.englishText, 'Hello');
+    expect(out.article.englishDeclined, isFalse);
   });
 
   test('retranslate fills in English text and persists it, no longer pending', () async {
@@ -123,6 +155,16 @@ void main() {
     expect(out.article.englishText, 'Hello');
     expect((await repo.article('id1'))!.englishText, 'Hello');
     expect((await repo.dirtyArticles()).single.id, 'id1');
+  });
+
+  test('retranslate on a deliberately declined article clears the declined flag', () async {
+    final declined = await saver().saveNew(
+        tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: false);
+    expect(declined.article.englishDeclined, isTrue);
+
+    final out = await saver().retranslate(declined.article);
+    expect(out.article.englishText, 'Hello');
+    expect(out.article.englishDeclined, isFalse);
   });
 
   test('retranslate that fails again leaves English pending', () async {

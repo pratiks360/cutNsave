@@ -19,9 +19,12 @@ class SaveOutcome {
 }
 
 class _English {
-  const _English(this.text, this.pending, [this.skip]);
+  const _English(this.text, this.pending, this.declined, [this.skip]);
   final String? text;
   final bool pending;
+  // True when [text] is null because the user deliberately declined
+  // translation, as opposed to a genuine attempt that is pending/failed.
+  final bool declined;
   final CloudSkip? skip;
 }
 
@@ -66,6 +69,7 @@ class ArticleSaver {
       originalText: text,
       originalLang: lang,
       englishText: en.text,
+      englishDeclined: en.declined,
       scannedAt: now,
       createdBy: userId,
       updatedAt: now,
@@ -86,7 +90,14 @@ class ArticleSaver {
     if (translate && (changed || old.englishText == null)) {
       en = await _english(text, lang, true);
     } else {
-      en = _English(changed ? null : old.englishText, false);
+      // Either the user turned the translate toggle off (declined - stale
+      // English is cleared only if the text itself changed, otherwise the
+      // prior declined/pending state carries over unchanged), or translate
+      // is on but nothing requires re-translating (text unchanged and
+      // englishText already present, so declined is moot).
+      final text2 = changed ? null : old.englishText;
+      final declined = translate ? false : (changed ? true : old.englishDeclined);
+      en = _English(text2, false, declined);
     }
     final article = old.copyWith(
       originalText: text,
@@ -94,6 +105,7 @@ class ArticleSaver {
       categoryId: categoryId,
       englishText: en.text,
       clearEnglish: en.text == null,
+      englishDeclined: en.declined,
       updatedAt: _now(),
     );
     await repo.upsertArticle(article);
@@ -108,6 +120,9 @@ class ArticleSaver {
     final updated = article.copyWith(
       englishText: en.text,
       clearEnglish: en.text == null,
+      // retranslate is an explicit "translate now" ask, so this always
+      // clears any prior decline - a genuine attempt just happened.
+      englishDeclined: en.declined,
       updatedAt: _now(),
     );
     await repo.upsertArticle(updated);
@@ -115,9 +130,9 @@ class ArticleSaver {
   }
 
   Future<_English> _english(String text, String lang, bool translate) async {
-    if (lang == 'en') return _English(text, false);
-    if (!translate) return const _English(null, false);
+    if (lang == 'en') return _English(text, false, false);
+    if (!translate) return const _English(null, false, true);
     final r = await translator.toEnglish(text, lang);
-    return _English(r.text, r.text == null, r.skip);
+    return _English(r.text, r.text == null, false, r.skip);
   }
 }
