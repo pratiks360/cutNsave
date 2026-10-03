@@ -49,4 +49,34 @@ void main() {
     ).fetch();
     expect(q, isNull);
   });
+
+  test('offline with a cache from a previous month is treated as a cache miss', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    // Cache written in September...
+    await QuotaService(
+      fetchRows: () async => [row], // row's month is 2026-10-01; see below
+      prefs: prefs,
+    ).fetch();
+    // ...read back in November: the cached quota is for October, so it must
+    // not be shown as if it were still current.
+    final q = await QuotaService(
+      fetchRows: () async => throw Exception('offline'),
+      prefs: prefs,
+      now: () => DateTime(2026, 11, 2),
+    ).fetch();
+    expect(q, isNull);
+  });
+
+  test('offline with a cache from the current month is still used', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    await QuotaService(fetchRows: () async => [row], prefs: prefs).fetch();
+    final q = await QuotaService(
+      fetchRows: () async => throw Exception('offline'),
+      prefs: prefs,
+      now: () => DateTime(2026, 10, 15),
+    ).fetch();
+    expect(q!.ocrLeft, 960);
+  });
 }
