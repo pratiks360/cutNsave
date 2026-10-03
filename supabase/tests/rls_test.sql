@@ -1,5 +1,5 @@
 begin;
-select plan(13);
+select plan(19);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'mom@example.com'),
@@ -58,6 +58,60 @@ select throws_ok(
 select throws_ok(
   $$select public.consume_quota(current_setting('test.lib')::uuid, 'ocr', 0)$$,
   'P0001', 'amount must be positive', 'zero amount is rejected');
+
+-- client-timestamp last-write-wins guard on upsert_article/upsert_category
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
+set local role authenticated;
+
+select set_config('test.art', gen_random_uuid()::text, true);
+select public.upsert_article(
+  current_setting('test.art')::uuid, current_setting('test.lib')::uuid, null, null,
+  'first version', 'mr', null, now(), null, null, '2026-01-01T00:00:00Z'::timestamptz);
+select is(
+  (select original_text from public.articles where id = current_setting('test.art')::uuid),
+  'first version', 'fresh insert via upsert_article succeeds');
+
+-- stale push (older client_updated_at) must NOT change stored fields
+select public.upsert_article(
+  current_setting('test.art')::uuid, current_setting('test.lib')::uuid, null, null,
+  'stale version', 'mr', null, now(), null, null, '2025-12-31T00:00:00Z'::timestamptz);
+select is(
+  (select original_text from public.articles where id = current_setting('test.art')::uuid),
+  'first version', 'stale client_updated_at push is rejected by the LWW guard');
+
+-- newer push (newer client_updated_at) DOES update stored fields
+select public.upsert_article(
+  current_setting('test.art')::uuid, current_setting('test.lib')::uuid, null, null,
+  'newer version', 'mr', null, now(), null, null, '2026-02-01T00:00:00Z'::timestamptz);
+select is(
+  (select original_text from public.articles where id = current_setting('test.art')::uuid),
+  'newer version', 'newer client_updated_at push is accepted by the LWW guard');
+
+-- same category coverage for upsert_category
+select set_config('test.cat', gen_random_uuid()::text, true);
+select public.upsert_category(
+  current_setting('test.cat')::uuid, current_setting('test.lib')::uuid,
+  'first', null, '2026-01-01T00:00:00Z'::timestamptz);
+select public.upsert_category(
+  current_setting('test.cat')::uuid, current_setting('test.lib')::uuid,
+  'stale', null, '2025-12-31T00:00:00Z'::timestamptz);
+select is(
+  (select name from public.categories where id = current_setting('test.cat')::uuid),
+  'first', 'upsert_category rejects a stale client_updated_at push too');
+
+-- non-member rejected by both RPCs
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c3","email":"mallory@example.com","role":"authenticated"}', true);
+set local role authenticated;
+select throws_ok(
+  $$select public.upsert_article(gen_random_uuid(), current_setting('test.lib')::uuid, null, null,
+    'x', 'mr', null, now(), null, null, now())$$,
+  'P0001', 'forbidden', 'stranger cannot call upsert_article');
+select throws_ok(
+  $$select public.upsert_category(gen_random_uuid(), current_setting('test.lib')::uuid,
+    'x', null, now())$$,
+  'P0001', 'forbidden', 'stranger cannot call upsert_category');
 
 select * from finish();
 rollback;

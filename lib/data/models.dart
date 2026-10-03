@@ -35,6 +35,7 @@ class Category {
         'library_id': libraryId,
         'name': name,
         'deleted_at': deleted ? DateTime.now().toUtc().toIso8601String() : null,
+        'client_updated_at': updatedAt.toUtc().toIso8601String(),
       };
 
   factory Category.fromRemote(Map<String, dynamic> m) => Category(
@@ -140,6 +141,7 @@ class Article {
         'scanned_at': scannedAt.toIso8601String(),
         'created_by': createdBy,
         'deleted_at': deleted ? DateTime.now().toUtc().toIso8601String() : null,
+        'client_updated_at': updatedAt.toUtc().toIso8601String(),
       };
 
   factory Article.fromRemote(Map<String, dynamic> m) => Article(
