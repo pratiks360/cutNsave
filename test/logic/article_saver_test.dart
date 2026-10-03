@@ -5,6 +5,7 @@ import 'package:cutnsave/data/local_db.dart';
 import 'package:cutnsave/data/repository.dart';
 import 'package:cutnsave/logic/article_saver.dart';
 import 'package:cutnsave/services/cloud_api.dart';
+import 'package:cutnsave/services/ocr_service.dart' show CloudSkip;
 import 'package:cutnsave/services/translate_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -14,6 +15,13 @@ class _Cloud implements CloudApi {
   Future<String> ocr(Uint8List jpeg) async => '';
   @override
   Future<String> translate(String text, String sourceLang) async => '';
+}
+
+class _TooLongCloud implements CloudApi {
+  @override
+  Future<String> ocr(Uint8List jpeg) async => '';
+  @override
+  Future<String> translate(String text, String sourceLang) async => throw TextTooLong();
 }
 
 void main() {
@@ -124,6 +132,25 @@ void main() {
     final out = await saver(result: null).retranslate(pending.article);
     expect(out.translationPending, isTrue);
     expect(out.article.englishText, isNull);
+  });
+
+  test('saveNew surfaces a tooLong translationSkip distinct from offline', () async {
+    final s = ArticleSaver(
+      repo: repo,
+      translator: TranslateService(
+        mlkit: (t, l) async => throw Exception('fail'),
+        cloud: _TooLongCloud(),
+      ),
+      libraryId: 'lib',
+      userId: 'u1',
+      imageDir: '${dir.path}/images',
+      now: () => DateTime.utc(2026, 10, 2),
+      newId: () => 'id1',
+    );
+    final out = await s.saveNew(
+        tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: true);
+    expect(out.translationPending, isTrue);
+    expect(out.translationSkip, CloudSkip.tooLong);
   });
 
   test('retranslate on an English article is a no-op passthrough', () async {

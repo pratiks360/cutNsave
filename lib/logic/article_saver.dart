@@ -5,18 +5,24 @@ import 'package:uuid/uuid.dart';
 
 import '../data/models.dart';
 import '../data/repository.dart';
+import '../services/ocr_service.dart' show CloudSkip;
 import '../services/translate_service.dart';
 
 class SaveOutcome {
-  const SaveOutcome(this.article, this.translationPending);
+  const SaveOutcome(this.article, this.translationPending, {this.translationSkip});
   final Article article;
   final bool translationPending;
+  // Why translation didn't complete when [translationPending] is true (quota,
+  // offline, or text too long for the cloud translator), so the UI can show
+  // a message specific to the reason instead of one generic "pending" note.
+  final CloudSkip? translationSkip;
 }
 
 class _English {
-  const _English(this.text, this.pending);
+  const _English(this.text, this.pending, [this.skip]);
   final String? text;
   final bool pending;
+  final CloudSkip? skip;
 }
 
 class ArticleSaver {
@@ -65,7 +71,7 @@ class ArticleSaver {
       updatedAt: now,
     );
     await repo.upsertArticle(article);
-    return SaveOutcome(article, en.pending);
+    return SaveOutcome(article, en.pending, translationSkip: en.skip);
   }
 
   Future<SaveOutcome> updateExisting(
@@ -91,7 +97,7 @@ class ArticleSaver {
       updatedAt: _now(),
     );
     await repo.upsertArticle(article);
-    return SaveOutcome(article, en.pending);
+    return SaveOutcome(article, en.pending, translationSkip: en.skip);
   }
 
   /// Re-runs translation for an article whose English text is still
@@ -105,13 +111,13 @@ class ArticleSaver {
       updatedAt: _now(),
     );
     await repo.upsertArticle(updated);
-    return SaveOutcome(updated, en.pending);
+    return SaveOutcome(updated, en.pending, translationSkip: en.skip);
   }
 
   Future<_English> _english(String text, String lang, bool translate) async {
     if (lang == 'en') return _English(text, false);
     if (!translate) return const _English(null, false);
     final r = await translator.toEnglish(text, lang);
-    return _English(r.text, r.text == null);
+    return _English(r.text, r.text == null, r.skip);
   }
 }

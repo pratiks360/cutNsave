@@ -28,7 +28,8 @@ class LoginScreen extends StatelessWidget {
               ),
               if (error != null) ...[
                 const SizedBox(height: 16),
-                Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                Text(context.t('error_generic'),
+                    style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ],
             ],
           ),

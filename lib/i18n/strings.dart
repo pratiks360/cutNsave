@@ -71,6 +71,7 @@ class Tr {
     'error_generic': 'Something went wrong',
     'sync_failed': "Some changes haven't synced yet. Will retry automatically.",
     'retry_translation': 'Translate now',
+    'translate_too_long': 'This article is too long to translate online.',
   };
 
   static const _mr = <String, String>{
@@ -136,5 +137,6 @@ class Tr {
     'error_generic': 'काहीतरी चूक झाली',
     'sync_failed': 'काही बदल अजून सिंक झाले नाहीत. आपोआप पुन्हा प्रयत्न होईल.',
     'retry_translation': 'आता भाषांतर करा',
+    'translate_too_long': 'हा लेख ऑनलाइन भाषांतरासाठी खूप मोठा आहे.',
   };
 }

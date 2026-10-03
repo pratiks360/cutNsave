@@ -39,10 +39,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       } else {
         await _offerUpdate(s, info);
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('${context.tr('update_failed')}: $e')));
+            .showSnackBar(SnackBar(content: Text(context.tr('update_failed'))));
       }
     } finally {
       if (mounted) setState(() => _checking = false);
@@ -80,11 +80,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final apk = await s.updater.download(info, onProgress: (v) => progress.value = v);
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
       await s.updater.install(apk);
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         Navigator.of(context, rootNavigator: true).pop();
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('${context.tr('update_failed')}: $e')));
+            .showSnackBar(SnackBar(content: Text(context.tr('update_failed'))));
       }
     }
   }

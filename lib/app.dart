@@ -50,7 +50,6 @@ class Gate extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(app.t('error_generic')),
-                  if (app.error != null) Text(app.error!),
                   const SizedBox(height: 16),
                   FilledButton(onPressed: app.retry, child: Text(app.t('retry'))),
                 ],
