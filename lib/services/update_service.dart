@@ -21,6 +21,7 @@ class UpdateService {
     required this.repoSlug,
     required this.installedVersion,
     this.timeout = const Duration(seconds: 20),
+    this.streamStallTimeout = const Duration(seconds: 30),
   });
 
   final http.Client client;
@@ -30,6 +31,13 @@ class UpdateService {
   /// Bound on each individual network call below. Overridable for tests so
   /// they don't have to wait out a real-world timeout.
   final Duration timeout;
+
+  /// Bound on the gap between two chunks of the APK download stream, reset
+  /// on every chunk received. Guards against a connection that answers the
+  /// initial request but then stalls mid-transfer (e.g. a captive portal
+  /// dropping the connection, or a dead peer) — `timeout` above only covers
+  /// receiving the response headers, not the body stream.
+  final Duration streamStallTimeout;
 
   Future<UpdateInfo?> latestIfNewer() async {
     final res = await client
@@ -64,12 +72,19 @@ class UpdateService {
     final total = res.contentLength ?? 0;
     var received = 0;
     final sink = file.openWrite();
-    await for (final chunk in res.stream) {
-      sink.add(chunk);
-      received += chunk.length;
-      if (total > 0) onProgress?.call(received / total);
+    final stalled = TimeoutException('update download stalled');
+    try {
+      await for (final chunk in res.stream.timeout(streamStallTimeout, onTimeout: (eventSink) {
+        eventSink.addError(stalled);
+        eventSink.close();
+      })) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) onProgress?.call(received / total);
+      }
+    } finally {
+      await sink.close();
     }
-    await sink.close();
     return file;
   }
 

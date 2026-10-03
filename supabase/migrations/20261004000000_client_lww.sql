@@ -14,6 +14,13 @@
 -- is untouched: it only fires on rows that actually get inserted/updated, so
 -- a push the RPC decides to skip correctly leaves updated_at (the pull
 -- cursor field) unchanged too.
+--
+-- Both RPCs run security definer (RLS is bypassed inside them), so the
+-- UPDATE's own where clause is the only thing standing between a member of
+-- library A and an existing row owned by library B. It must therefore check
+-- the row's EXISTING library_id, not just that the caller is a member of
+-- the incoming p_library_id -- otherwise a member of A who knows (or learns
+-- via sync) an id belonging to B could silently reassign/overwrite B's row.
 
 alter table public.articles add column client_updated_at timestamptz;
 alter table public.categories add column client_updated_at timestamptz;
@@ -63,6 +70,7 @@ begin
     deleted_at = p_deleted_at,
     client_updated_at = p_client_updated_at
   where id = p_id
+    and library_id = p_library_id
     and (client_updated_at is null or p_client_updated_at >= client_updated_at);
 end $$;
 
@@ -91,6 +99,7 @@ begin
     deleted_at = p_deleted_at,
     client_updated_at = p_client_updated_at
   where id = p_id
+    and library_id = p_library_id
     and (client_updated_at is null or p_client_updated_at >= client_updated_at);
 end $$;
 

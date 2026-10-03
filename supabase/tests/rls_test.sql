@@ -1,10 +1,11 @@
 begin;
-select plan(19);
+select plan(22);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'mom@example.com'),
   ('00000000-0000-0000-0000-0000000000b2', 'sis@example.com'),
-  ('00000000-0000-0000-0000-0000000000c3', 'mallory@example.com');
+  ('00000000-0000-0000-0000-0000000000c3', 'mallory@example.com'),
+  ('00000000-0000-0000-0000-0000000000d4', 'dave@example.com');
 
 -- mom signs in first: gets a new library with 5 default categories
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
@@ -99,6 +100,62 @@ select public.upsert_category(
 select is(
   (select name from public.categories where id = current_setting('test.cat')::uuid),
   'first', 'upsert_category rejects a stale client_updated_at push too');
+
+select public.upsert_category(
+  current_setting('test.cat')::uuid, current_setting('test.lib')::uuid,
+  'newer', null, '2026-02-01T00:00:00Z'::timestamptz);
+select is(
+  (select name from public.categories where id = current_setting('test.cat')::uuid),
+  'newer', 'newer client_updated_at push is accepted for categories too');
+
+-- dave is a member of a second, unrelated library (library B). This app's
+-- real deployment is single-family/single-library (bootstrap_library()
+-- refuses to create a second one), but the schema itself places no
+-- constraint against a second libraries row existing, so the RPCs must not
+-- rely on that deployment assumption for authorization. Insert library B
+-- directly (as the test's superuser role) to exercise that case.
+reset role;
+insert into public.libraries (owner_id) values ('00000000-0000-0000-0000-0000000000d4');
+select set_config('test.lib_b', (select id::text from public.libraries
+  where owner_id = '00000000-0000-0000-0000-0000000000d4'), true);
+insert into public.library_members (library_id, email, user_id, role)
+  values (current_setting('test.lib_b')::uuid, 'dave@example.com',
+    '00000000-0000-0000-0000-0000000000d4', 'owner');
+
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d4","email":"dave@example.com","role":"authenticated"}', true);
+set local role authenticated;
+select set_config('test.art_b', gen_random_uuid()::text, true);
+select public.upsert_article(
+  current_setting('test.art_b')::uuid, current_setting('test.lib_b')::uuid, null, null,
+  'daves article', 'mr', null, now(), null, null, '2026-01-01T00:00:00Z'::timestamptz);
+select set_config('test.cat_b', gen_random_uuid()::text, true);
+select public.upsert_category(
+  current_setting('test.cat_b')::uuid, current_setting('test.lib_b')::uuid,
+  'daves category', null, '2026-01-01T00:00:00Z'::timestamptz);
+
+-- mom (member of library A only) cannot hijack library B's rows by passing
+-- her own library_id alongside an id she doesn't own; security definer RPCs
+-- must check the row's EXISTING library_id, not just caller membership
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
+set local role authenticated;
+select public.upsert_article(
+  current_setting('test.art_b')::uuid, current_setting('test.lib')::uuid, null, null,
+  'hijacked', 'mr', null, now(), null, null, '2026-03-01T00:00:00Z'::timestamptz);
+select public.upsert_category(
+  current_setting('test.cat_b')::uuid, current_setting('test.lib')::uuid,
+  'hijacked', null, '2026-03-01T00:00:00Z'::timestamptz);
+
+-- check with RLS bypassed (superuser) since mom isn't a member of library B
+-- and can't see its rows at all, which is itself correct but not what this
+-- assertion is testing
+reset role;
+select is(
+  (select library_id from public.articles where id = current_setting('test.art_b')::uuid),
+  current_setting('test.lib_b')::uuid, 'cross-library upsert_article cannot reassign another library''s row');
+select is(
+  (select library_id from public.categories where id = current_setting('test.cat_b')::uuid),
+  current_setting('test.lib_b')::uuid, 'cross-library upsert_category cannot reassign another library''s row');
 
 -- non-member rejected by both RPCs
 reset role;

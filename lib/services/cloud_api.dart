@@ -5,6 +5,9 @@ import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _networkTimeout = Duration(seconds: 20);
+// ocr() uploads a base64-encoded JPEG, the same large-payload case
+// remote_store.dart/translate_service.dart give 60s for.
+const _transferTimeout = Duration(seconds: 60);
 
 class QuotaExceeded implements Exception {
   @override
@@ -23,10 +26,11 @@ class SupabaseCloudApi implements CloudApi {
 
   @override
   Future<String> ocr(Uint8List jpeg) async {
-    final res = await _invoke('ocr', {
-      'image_base64': base64Encode(jpeg),
-      'library_id': _libraryId,
-    });
+    final res = await _invoke(
+      'ocr',
+      {'image_base64': base64Encode(jpeg), 'library_id': _libraryId},
+      timeout: _transferTimeout,
+    );
     return res['text'] as String;
   }
 
@@ -40,10 +44,14 @@ class SupabaseCloudApi implements CloudApi {
     return res['text'] as String;
   }
 
-  Future<Map<String, dynamic>> _invoke(String fn, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> _invoke(
+    String fn,
+    Map<String, dynamic> body, {
+    Duration timeout = _networkTimeout,
+  }) async {
     try {
       final res = await _client.functions.invoke(fn, body: body).timeout(
-            _networkTimeout,
+            timeout,
             onTimeout: () => throw TimeoutException('cloud_api.$fn timed out'),
           );
       return Map<String, dynamic>.from(res.data as Map);
