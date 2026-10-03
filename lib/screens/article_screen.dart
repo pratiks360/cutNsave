@@ -150,7 +150,7 @@ class _ArticleScreenState extends State<ArticleScreen> {
             const SizedBox(height: 16),
             Text(context.t('english_text'), style: Theme.of(context).textTheme.titleMedium),
             SelectableText(a.englishText!),
-          ] else if (a.originalLang != 'en') ...[
+          ] else if (a.needsTranslatePrompt) ...[
             const SizedBox(height: 16),
             OutlinedButton.icon(
               icon: const Icon(Icons.translate),
