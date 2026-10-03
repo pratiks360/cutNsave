@@ -47,14 +47,14 @@ void main() {
   // rather than the 'client_updated_at' that toRemote() sends as an RPC
   // param - the two are not inverses of each other, so build a representative
   // server row directly instead of round-tripping through toRemote().
-  Map<String, dynamic> _remoteRow({bool? englishDeclined}) => {
+  Map<String, dynamic> remoteRow({bool? englishDeclined}) => {
         'id': 'a1',
         'library_id': 'lib',
         'category_id': null,
         'original_text': 'x',
         'original_lang': 'mr',
         'english_text': null,
-        if (englishDeclined != null) 'english_declined': englishDeclined,
+        'english_declined': ?englishDeclined,
         'scanned_at': DateTime.utc(2026, 1, 1).toIso8601String(),
         'created_by': null,
         'updated_at': DateTime.utc(2026, 1, 1).toIso8601String(),
@@ -68,11 +68,11 @@ void main() {
   });
 
   test('fromRemote reads an explicit englishDeclined value', () {
-    expect(Article.fromRemote(_remoteRow(englishDeclined: true)).englishDeclined, isTrue);
-    expect(Article.fromRemote(_remoteRow(englishDeclined: false)).englishDeclined, isFalse);
+    expect(Article.fromRemote(remoteRow(englishDeclined: true)).englishDeclined, isTrue);
+    expect(Article.fromRemote(remoteRow(englishDeclined: false)).englishDeclined, isFalse);
   });
 
   test('fromRemote defaults englishDeclined to false when the field is absent', () {
-    expect(Article.fromRemote(_remoteRow()).englishDeclined, isFalse);
+    expect(Article.fromRemote(remoteRow()).englishDeclined, isFalse);
   });
 }

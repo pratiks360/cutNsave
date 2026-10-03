@@ -81,7 +81,7 @@ class SupabaseRemoteStore implements RemoteStore {
     return rows.map((r) => Article.fromRemote(Map<String, dynamic>.from(r))).toList();
   }
 
-  Map<String, dynamic> _categoryParams(Category c) {
+  static Map<String, dynamic> _categoryParams(Category c) {
     final m = c.toRemote();
     return {
       'p_id': m['id'],
@@ -92,7 +92,14 @@ class SupabaseRemoteStore implements RemoteStore {
     };
   }
 
-  Map<String, dynamic> _articleParams(Article a) {
+  /// Exposed only so a test can pin these keys against the real
+  /// upsert_article SQL signature -- a param-name typo here sends an
+  /// unrecognized named arg to PostgREST and silently breaks every article
+  /// sync, not just whatever field was being added. Test-only; not part of
+  /// the public RemoteStore contract.
+  static Map<String, dynamic> articleParamsForTesting(Article a) => _articleParams(a);
+
+  static Map<String, dynamic> _articleParams(Article a) {
     final m = a.toRemote();
     return {
       'p_id': m['id'],
@@ -102,7 +109,7 @@ class SupabaseRemoteStore implements RemoteStore {
       'p_original_text': m['original_text'],
       'p_original_lang': m['original_lang'],
       'p_english_text': m['english_text'],
-      'p_english_declined': m['english_declined'],
+      'p_translation_declined': m['english_declined'],
       'p_scanned_at': m['scanned_at'],
       'p_created_by': m['created_by'],
       'p_deleted_at': m['deleted_at'],
