@@ -32,6 +32,17 @@
 -- not overwrite the survivor's name or deleted_at from the losing insert's
 -- values, so a same-named push never "undeletes" or renames the survivor.
 --
+-- The DO UPDATE has its own WHERE guard (not just a CASE inside SET) so
+-- that a stale colliding push -- one whose client_updated_at loses the LWW
+-- comparison -- causes Postgres to skip the UPDATE entirely rather than
+-- writing the same value back. Writing back an unchanged value would still
+-- fire the categories_updated trigger and bump updated_at, which is the
+-- sync pull cursor: per the invariant 20261004000000_client_lww.sql
+-- established, a push the RPC decides not to apply must leave updated_at
+-- untouched, or every other device re-pulls a row that didn't actually
+-- change. When the WHERE guard skips the write, RETURNING produces no row,
+-- so the id is looked up separately in that branch.
+--
 -- The merge's conflict target is (library_id, lower(name)), i.e. it is
 -- scoped to the SAME library_id being inserted into, and p_library_id was
 -- already authorized via is_member() above. So this cannot be used to merge
@@ -63,13 +74,19 @@ begin
     values (p_id, p_library_id, p_name, p_deleted_at, p_client_updated_at)
     on conflict (library_id, lower(name)) where deleted_at is null
     do update set
-      client_updated_at = case
-        when public.categories.client_updated_at is null
-          or excluded.client_updated_at >= public.categories.client_updated_at
-        then excluded.client_updated_at
-        else public.categories.client_updated_at
-      end
+      client_updated_at = excluded.client_updated_at
+    where public.categories.client_updated_at is null
+      or excluded.client_updated_at >= public.categories.client_updated_at
     returning id into result_id;
+
+    if result_id is null then
+      -- the WHERE guard above made Postgres skip the UPDATE (a stale
+      -- colliding push loses to LWW), so RETURNING produced no row and
+      -- the trigger-driven updated_at bump correctly never fired. The
+      -- survivor's id is still the one the unique index matched on.
+      select id into result_id from public.categories
+        where library_id = p_library_id and lower(name) = lower(p_name) and deleted_at is null;
+    end if;
 
     return result_id;
   end if;
