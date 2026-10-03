@@ -75,6 +75,35 @@ void main() {
     expect((await repo.categories()).length, 1);
   });
 
+  test('renameCategory updates the name and marks the row dirty', () async {
+    final c = await repo.createCategory('lib', 'Health');
+    await repo.markClean('categories', c.id, c.updatedAt);
+    await repo.renameCategory(c, 'Wellness');
+    final cats = await repo.categories();
+    expect(cats.single.name, 'Wellness');
+    expect((await repo.dirtyCategories()).map((x) => x.id), [c.id]);
+  });
+
+  test('renameCategory trims and is a no-op for an unchanged/blank name', () async {
+    final c = await repo.createCategory('lib', 'Health');
+    await repo.markClean('categories', c.id, c.updatedAt);
+    await repo.renameCategory(c, '  Health  ');
+    expect(await repo.dirtyCategories(), isEmpty);
+    await repo.renameCategory(c, '   ');
+    expect(await repo.dirtyCategories(), isEmpty);
+    expect((await repo.categories()).single.name, 'Health');
+  });
+
+  test('softDeleteCategory removes it from categories() without touching its articles', () async {
+    final c = await repo.createCategory('lib', 'Health');
+    await repo.upsertArticle(art('a1', cat: c.id));
+    await repo.softDeleteCategory(c);
+    expect(await repo.categories(), isEmpty);
+    // The article keeps its category_id -- it just resolves to nothing in
+    // the UI's live-categories lookup, rather than being rewritten here.
+    expect((await repo.article('a1'))!.categoryId, c.id);
+  });
+
   test('dirty rows are listed until marked clean', () async {
     final a = art('a1');
     await repo.upsertArticle(a);

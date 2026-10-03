@@ -1,5 +1,5 @@
 import { consume, cors, json } from '../_shared/auth.ts';
-import { extractTranslation } from '../_shared/google.ts';
+import { translateViaOpenRouter } from '../_shared/openrouter.ts';
 
 const MAX_CHARS = 30000;
 
@@ -18,14 +18,14 @@ Deno.serve(async (req) => {
   const gate = await consume(req, library_id, 'translate', text.length);
   if (gate !== 'ok') return json({ error: gate }, gate === 'quota' ? 429 : 403);
 
-  const res = await fetch(
-    `https://translation.googleapis.com/language/translate/v2?key=${Deno.env.get('GOOGLE_API_KEY')}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ q: text, source, target: 'en', format: 'text' }),
-    },
-  );
-  if (!res.ok) return json({ error: 'upstream' }, 502);
-  return json({ text: extractTranslation(await res.json()) });
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY');
+  if (!apiKey) return json({ error: 'server_not_configured' }, 500);
+
+  try {
+    const translated = await translateViaOpenRouter(text, source, apiKey);
+    return json({ text: translated });
+  } catch (e) {
+    console.error('translate: all OpenRouter models failed:', (e as Error).message);
+    return json({ error: 'upstream' }, 502);
+  }
 });

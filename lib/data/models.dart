@@ -13,6 +13,14 @@ class Category {
   final DateTime updatedAt;
   final bool deleted;
 
+  Category copyWith({String? name, bool? deleted, DateTime? updatedAt}) => Category(
+        id: id,
+        libraryId: libraryId,
+        name: name ?? this.name,
+        deleted: deleted ?? this.deleted,
+        updatedAt: updatedAt ?? DateTime.now(),
+      );
+
   Map<String, Object?> toLocal({required bool dirty}) => {
         'id': id,
         'library_id': libraryId,

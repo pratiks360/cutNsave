@@ -29,6 +29,9 @@ Deno.serve(async (req) => {
       }),
     },
   );
-  if (!res.ok) return json({ error: 'upstream' }, 502);
+  if (!res.ok) {
+    console.error('ocr: Vision API request failed:', res.status, await res.text());
+    return json({ error: 'upstream' }, 502);
+  }
   return json({ text: extractText(await res.json()) });
 });

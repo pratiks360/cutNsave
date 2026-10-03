@@ -3,8 +3,6 @@ import 'package:cutnsave/services/ocr_service.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const good = 'तो घरी आहे आणि काम करत आहे कारण आज रविवार आहे आणि सुट्टी आहे';
-
 class FakeCloud implements CloudApi {
   FakeCloud({this.ocrText = 'cloud text', this.error});
   final String ocrText;
@@ -27,54 +25,58 @@ OcrService svc(String local, FakeCloud cloud) => OcrService(
     );
 
 void main() {
-  test('good ML Kit result never calls cloud', () async {
-    final cloud = FakeCloud();
-    final r = await svc(good, cloud).recognize('p.jpg');
-    expect(r.text, good);
-    expect(r.usedCloud, isFalse);
-    expect(cloud.ocrCalls, 0);
-  });
-
-  test('poor ML Kit result falls back to cloud', () async {
-    final cloud = FakeCloud(ocrText: good);
-    final r = await svc('', cloud).recognize('p.jpg');
-    expect(r.text, good);
+  test('cloud OCR is tried first and used when it succeeds', () async {
+    final cloud = FakeCloud(ocrText: 'cloud result');
+    final r = await svc('local result', cloud).recognize('p.jpg');
+    expect(r.text, 'cloud result');
     expect(r.usedCloud, isTrue);
+    expect(r.skip, isNull);
+    expect(cloud.ocrCalls, 1);
   });
 
-  test('quota exceeded keeps local text and reports skip', () async {
-    final r = await svc('abc', FakeCloud(error: QuotaExceeded())).recognize('p.jpg');
-    expect(r.text, 'abc');
+  test('cloud returning only whitespace falls back to ML Kit without a skip reason', () async {
+    final r = await svc('local result', FakeCloud(ocrText: '  ')).recognize('p.jpg');
+    expect(r.text, 'local result');
+    expect(r.usedCloud, isFalse);
+    expect(r.skip, isNull);
+  });
+
+  test('quota exceeded falls back to ML Kit and reports skip', () async {
+    final r = await svc('local result', FakeCloud(error: QuotaExceeded())).recognize('p.jpg');
+    expect(r.text, 'local result');
+    expect(r.usedCloud, isFalse);
     expect(r.skip, CloudSkip.quota);
   });
 
-  test('network error keeps local text and reports offline', () async {
-    final r = await svc('abc', FakeCloud(error: Exception('socket'))).recognize('p.jpg');
-    expect(r.text, 'abc');
+  test('network error falls back to ML Kit and reports offline', () async {
+    final r = await svc('local result', FakeCloud(error: Exception('socket'))).recognize('p.jpg');
+    expect(r.text, 'local result');
+    expect(r.usedCloud, isFalse);
     expect(r.skip, CloudSkip.offline);
   });
 
-  test('cloud returning empty keeps local text', () async {
-    final r = await svc('abc', FakeCloud(ocrText: '  ')).recognize('p.jpg');
-    expect(r.text, 'abc');
-    expect(r.usedCloud, isFalse);
-  });
-
-  test('ML Kit throwing does not propagate and returns a safe result', () async {
-    final cloud = FakeCloud(ocrText: good);
+  test('both cloud and ML Kit failing returns empty text with a skip reason', () async {
     final service = OcrService(
       mlkit: (_) async => throw PlatformException(code: 'decode_failed'),
-      cloud: cloud,
+      cloud: FakeCloud(error: Exception('socket')),
       readBytes: (_) async => Uint8List(1),
     );
-    // Must not throw: this is the regression case for the OCR hang (the
-    // caller's try/catch around recognize() should never even be needed,
-    // but a bug here used to leave edit_article_screen stuck on a spinner).
+    // Must not throw: the caller's try/catch around recognize() should never
+    // even be needed, but a bug here used to leave edit_article_screen stuck
+    // on a spinner.
     final r = await service.recognize('p.jpg');
     expect(r.text, '');
     expect(r.skip, CloudSkip.offline);
-    // Cloud OCR was deliberately not attempted: an ML Kit exception points at
-    // a bad/unsupported image, not a connectivity problem.
-    expect(cloud.ocrCalls, 0);
+  });
+
+  test('ML Kit throwing after a cloud failure still reports the cloud skip reason', () async {
+    final service = OcrService(
+      mlkit: (_) async => throw PlatformException(code: 'decode_failed'),
+      cloud: FakeCloud(error: QuotaExceeded()),
+      readBytes: (_) async => Uint8List(1),
+    );
+    final r = await service.recognize('p.jpg');
+    expect(r.text, '');
+    expect(r.skip, CloudSkip.quota);
   });
 }

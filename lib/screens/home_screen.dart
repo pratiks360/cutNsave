@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../data/models.dart';
 import '../logic/home_controller.dart';
 import '../services/services.dart';
 import '../state/app_state.dart';
@@ -104,10 +105,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     for (final cat in _c.categories)
                       _chip(
-                        ChoiceChip(
-                          label: Text(cat.name),
-                          selected: _c.categoryId == cat.id,
-                          onSelected: (_) => _c.setCategory(cat.id),
+                        GestureDetector(
+                          onLongPress: () => _categoryActions(cat),
+                          child: ChoiceChip(
+                            label: Text(cat.name),
+                            selected: _c.categoryId == cat.id,
+                            onSelected: (_) => _c.setCategory(cat.id),
+                          ),
                         ),
                       ),
                     _chip(
@@ -175,4 +179,73 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _chip(Widget chip) =>
       Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6), child: chip);
+
+  Future<void> _categoryActions(Category cat) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: Text(ctx.t('rename')),
+              onTap: () => Navigator.pop(ctx, 'rename'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: Text(ctx.t('delete_category')),
+              onTap: () => Navigator.pop(ctx, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'rename') await _renameCategory(cat);
+    if (action == 'delete') await _deleteCategory(cat);
+  }
+
+  Future<void> _renameCategory(Category cat) async {
+    final controller = TextEditingController(text: cat.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(ctx.tr('rename_category')),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(labelText: ctx.tr('category_name')),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(ctx.tr('cancel'))),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text(ctx.tr('save')),
+          ),
+        ],
+      ),
+    );
+    if (name == null || !mounted) return;
+    await _s.repo.renameCategory(cat, name);
+    unawaited(_s.sync.trySync());
+    if (mounted) await _c.reload();
+  }
+
+  Future<void> _deleteCategory(Category cat) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(ctx.tr('delete_category_confirm', {'name': cat.name})),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(ctx.tr('cancel'))),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(ctx.tr('delete'))),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _s.repo.softDeleteCategory(cat);
+    unawaited(_s.sync.trySync());
+    if (_c.categoryId == cat.id) _c.setCategory(null);
+    if (mounted) await _c.reload();
+  }
 }

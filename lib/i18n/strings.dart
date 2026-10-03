@@ -72,6 +72,11 @@ class Tr {
     'sync_failed': "Some changes haven't synced yet. Will retry automatically.",
     'retry_translation': 'Translate now',
     'translate_too_long': 'This article is too long to translate online.',
+    'rename': 'Rename',
+    'rename_category': 'Rename category',
+    'delete_category': 'Delete category',
+    'delete_category_confirm':
+        'Delete "{name}"? Articles in it will become uncategorized, not deleted.',
   };
 
   static const _mr = <String, String>{
@@ -138,5 +143,10 @@ class Tr {
     'sync_failed': 'काही बदल अजून सिंक झाले नाहीत. आपोआप पुन्हा प्रयत्न होईल.',
     'retry_translation': 'आता भाषांतर करा',
     'translate_too_long': 'हा लेख ऑनलाइन भाषांतरासाठी खूप मोठा आहे.',
+    'rename': 'नाव बदला',
+    'rename_category': 'वर्गाचे नाव बदला',
+    'delete_category': 'वर्ग काढून टाका',
+    'delete_category_confirm':
+        '"{name}" काढून टाकायचा? त्यातील लेख हटणार नाहीत, फक्त विनावर्ग होतील.',
   };
 }
