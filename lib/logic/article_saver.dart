@@ -94,6 +94,20 @@ class ArticleSaver {
     return SaveOutcome(article, en.pending);
   }
 
+  /// Re-runs translation for an article whose English text is still
+  /// pending (both ML Kit and cloud translate failed earlier, e.g. quota or
+  /// offline) and stores the result locally, dirty, for the next sync.
+  Future<SaveOutcome> retranslate(Article article) async {
+    final en = await _english(article.originalText, article.originalLang, true);
+    final updated = article.copyWith(
+      englishText: en.text,
+      clearEnglish: en.text == null,
+      updatedAt: _now(),
+    );
+    await repo.upsertArticle(updated);
+    return SaveOutcome(updated, en.pending);
+  }
+
   Future<_English> _english(String text, String lang, bool translate) async {
     if (lang == 'en') return _English(text, false);
     if (!translate) return const _English(null, false);

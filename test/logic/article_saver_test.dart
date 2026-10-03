@@ -104,4 +104,33 @@ void main() {
         text: 'धन्यवाद', lang: 'mr', translate: false);
     expect(out.article.englishText, isNull);
   });
+
+  test('retranslate fills in English text and persists it, no longer pending', () async {
+    final pending = await saver(result: null).saveNew(
+        tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: true);
+    expect(pending.translationPending, isTrue);
+
+    final out = await saver().retranslate(pending.article);
+    expect(out.translationPending, isFalse);
+    expect(out.article.englishText, 'Hello');
+    expect((await repo.article('id1'))!.englishText, 'Hello');
+    expect((await repo.dirtyArticles()).single.id, 'id1');
+  });
+
+  test('retranslate that fails again leaves English pending', () async {
+    final pending = await saver(result: null).saveNew(
+        tempImagePath: photo.path, text: 'नमस्कार', lang: 'mr', translate: true);
+
+    final out = await saver(result: null).retranslate(pending.article);
+    expect(out.translationPending, isTrue);
+    expect(out.article.englishText, isNull);
+  });
+
+  test('retranslate on an English article is a no-op passthrough', () async {
+    final out = await saver().saveNew(
+        tempImagePath: photo.path, text: 'Hi there', lang: 'en', translate: true);
+    final retried = await saver().retranslate(out.article);
+    expect(retried.translationPending, isFalse);
+    expect(retried.article.englishText, 'Hi there');
+  });
 }

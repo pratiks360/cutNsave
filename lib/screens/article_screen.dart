@@ -23,6 +23,7 @@ class _ArticleScreenState extends State<ArticleScreen> {
   Article? _article;
   String? _categoryName;
   bool _sharing = false;
+  bool _retranslating = false;
 
   @override
   void initState() {
@@ -51,6 +52,27 @@ class _ArticleScreenState extends State<ArticleScreen> {
       }
     } finally {
       if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  Future<void> _retranslate() async {
+    setState(() => _retranslating = true);
+    try {
+      final outcome = await _s.saver.retranslate(_article!);
+      unawaited(_s.sync.trySync());
+      if (!mounted) return;
+      setState(() => _article = outcome.article);
+      if (outcome.translationPending) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(context.tr('translate_later'))));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(context.tr('error_generic'))));
+      }
+    } finally {
+      if (mounted) setState(() => _retranslating = false);
     }
   }
 
@@ -118,6 +140,13 @@ class _ArticleScreenState extends State<ArticleScreen> {
             const SizedBox(height: 16),
             Text(context.t('english_text'), style: Theme.of(context).textTheme.titleMedium),
             SelectableText(a.englishText!),
+          ] else if (a.originalLang != 'en') ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.translate),
+              label: Text(context.t(_retranslating ? 'translating' : 'retry_translation')),
+              onPressed: _retranslating ? null : _retranslate,
+            ),
           ],
           const SizedBox(height: 24),
           FilledButton.icon(
