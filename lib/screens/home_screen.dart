@@ -23,6 +23,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final Services _s = context.read<Services>();
   late final HomeController _c = HomeController(_s.repo);
+  late final Listenable _listenable = Listenable.merge([_c, _s.sync]);
   int _quotaTick = 0;
 
   @override
@@ -69,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () => _open(const ScanScreen()),
       ),
       body: ListenableBuilder(
-        listenable: Listenable.merge([_c, _s.sync]),
+        listenable: _listenable,
         builder: (context, _) {
           final names = {for (final c in _c.categories) c.id: c.name};
           return Column(
