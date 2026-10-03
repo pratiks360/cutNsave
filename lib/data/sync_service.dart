@@ -1,12 +1,13 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'remote_store.dart';
 import 'repository.dart';
 
-class SyncService {
+class SyncService extends ChangeNotifier {
   SyncService({
     required this.repo,
     required this.remote,
@@ -24,13 +25,27 @@ class SyncService {
 
   Future<void>? _inFlight;
 
+  /// True once a `trySync()` attempt has failed and no later attempt has
+  /// yet succeeded. The UI (see HomeScreen) surfaces this as a small
+  /// persistent indicator so a silently-failed sync doesn't leave the user
+  /// believing their edits reached the shared backend.
+  bool hasPendingFailure = false;
+
   Future<bool> trySync() async {
     try {
       await sync();
+      _setPendingFailure(false);
       return true;
     } catch (_) {
+      _setPendingFailure(true);
       return false;
     }
+  }
+
+  void _setPendingFailure(bool value) {
+    if (hasPendingFailure == value) return;
+    hasPendingFailure = value;
+    notifyListeners();
   }
 
   /// Single-flight: if a sync is already running, callers share its Future

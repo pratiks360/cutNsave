@@ -69,11 +69,12 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: () => _open(const ScanScreen()),
       ),
       body: ListenableBuilder(
-        listenable: _c,
+        listenable: Listenable.merge([_c, _s.sync]),
         builder: (context, _) {
           final names = {for (final c in _c.categories) c.id: c.name};
           return Column(
             children: [
+              if (_s.sync.hasPendingFailure) _syncFailedBanner(context),
               QuotaCard(key: ValueKey(_quotaTick)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -148,6 +149,25 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _syncFailedBanner(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      color: colors.errorContainer,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off, size: 18, color: colors.onErrorContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(context.t('sync_failed'), style: TextStyle(color: colors.onErrorContainer)),
+          ),
+          TextButton(onPressed: _refresh, child: Text(context.t('retry'))),
+        ],
       ),
     );
   }

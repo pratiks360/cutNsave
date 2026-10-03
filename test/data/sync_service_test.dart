@@ -180,9 +180,55 @@ void main() {
     expect(await failing.trySync(), isFalse);
     expect((await repo.dirtyArticles()).length, 1);
   });
+
+  test('trySync sets hasPendingFailure on failure and notifies listeners', () async {
+    await repo.upsertArticle(art('a1'));
+    final failing = SyncService(
+      repo: repo,
+      remote: _Throwing(),
+      prefs: await SharedPreferences.getInstance(),
+      imageDir: dir.path,
+    );
+    var notified = 0;
+    failing.addListener(() => notified++);
+    expect(failing.hasPendingFailure, isFalse);
+    await failing.trySync();
+    expect(failing.hasPendingFailure, isTrue);
+    expect(notified, 1);
+    // A second failed attempt is not newly actionable: no extra notification.
+    await failing.trySync();
+    expect(notified, 1);
+  });
+
+  test('hasPendingFailure clears on the next successful trySync', () async {
+    await repo.upsertArticle(art('a1'));
+    final remoteThatFailsOnce = _FailsOnceThenWorks();
+    final flaky = SyncService(
+      repo: repo,
+      remote: remoteThatFailsOnce,
+      prefs: await SharedPreferences.getInstance(),
+      imageDir: dir.path,
+    );
+    expect(await flaky.trySync(), isFalse);
+    expect(flaky.hasPendingFailure, isTrue);
+    expect(await flaky.trySync(), isTrue);
+    expect(flaky.hasPendingFailure, isFalse);
+  });
 }
 
 class _Throwing extends FakeRemote {
   @override
   Future<void> upsertArticle(Article a) async => throw Exception('offline');
+}
+
+class _FailsOnceThenWorks extends FakeRemote {
+  bool _failed = false;
+  @override
+  Future<void> upsertArticle(Article a) async {
+    if (!_failed) {
+      _failed = true;
+      throw Exception('offline');
+    }
+    await super.upsertArticle(a);
+  }
 }

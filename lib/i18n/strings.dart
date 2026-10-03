@@ -69,6 +69,8 @@ class Tr {
     'translate_later': 'Translation pending (needs internet).',
     'ocr_empty': 'No text found. Type it yourself or retake the photo.',
     'error_generic': 'Something went wrong',
+    'sync_failed': "Some changes haven't synced yet. Will retry automatically.",
+    'retry_translation': 'Translate now',
   };
 
   static const _mr = <String, String>{
@@ -132,5 +134,7 @@ class Tr {
     'translate_later': 'भाषांतर बाकी आहे (इंटरनेट हवे).',
     'ocr_empty': 'मजकूर सापडला नाही. मजकूर स्वतः लिहा किंवा पुन्हा फोटो काढा.',
     'error_generic': 'काहीतरी चूक झाली',
+    'sync_failed': 'काही बदल अजून सिंक झाले नाहीत. आपोआप पुन्हा प्रयत्न होईल.',
+    'retry_translation': 'आता भाषांतर करा',
   };
 }
