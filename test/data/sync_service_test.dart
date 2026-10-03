@@ -250,6 +250,30 @@ void main() {
     expect(failingDownload.downloadCalls, 1);
   });
 
+  test('a single bad row does not block the rest of the dirty queue', () async {
+    // Three dirty articles; the middle one always fails to push (e.g. a
+    // permanently-stuck row). The other two must still be pushed and
+    // marked clean, the bad one must stay dirty, and the overall sync
+    // must still be reported as a failure via hasPendingFailure.
+    await repo.upsertArticle(art('a1'));
+    await repo.upsertArticle(art('a2'));
+    await repo.upsertArticle(art('a3'));
+    final partiallyFailing = _FailsOnOneArticle('a2');
+    final flaky = SyncService(
+      repo: repo,
+      remote: partiallyFailing,
+      prefs: await SharedPreferences.getInstance(),
+      imageDir: dir.path,
+    );
+
+    expect(await flaky.trySync(), isFalse);
+    expect(flaky.hasPendingFailure, isTrue);
+
+    final dirtyIds = (await repo.dirtyArticles()).map((a) => a.id).toSet();
+    expect(dirtyIds, {'a2'});
+    expect(partiallyFailing.arts.map((a) => a.id).toSet(), {'a1', 'a3'});
+  });
+
   test('hasPendingFailure clears on the next successful trySync', () async {
     await repo.upsertArticle(art('a1'));
     final remoteThatFailsOnce = _FailsOnceThenWorks();
@@ -277,6 +301,17 @@ class _FailingDownloadRemote extends FakeRemote {
   Future<Uint8List> downloadImage(String remotePath) async {
     downloadCalls++;
     throw Exception('404');
+  }
+}
+
+class _FailsOnOneArticle extends FakeRemote {
+  _FailsOnOneArticle(this.badId);
+  final String badId;
+
+  @override
+  Future<void> upsertArticle(Article a) async {
+    if (a.id == badId) throw Exception('stuck row');
+    await super.upsertArticle(a);
   }
 }
 

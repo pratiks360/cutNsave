@@ -66,25 +66,46 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<void> _push() async {
+    var anyFailed = false;
     for (final c in await repo.dirtyCategories()) {
-      final survivorId = await remote.upsertCategory(c);
-      if (survivorId == c.id) {
-        await repo.markClean('categories', c.id, c.updatedAt);
-      } else {
-        // Server-side dedup merged this category into an existing one with
-        // the same name (see mergeCategoryId doc comment); c.id never
-        // actually landed server-side, so there's nothing to mark clean -
-        // drop it locally and repoint any articles that used it.
-        await repo.mergeCategoryId(c.id, survivorId);
+      try {
+        final survivorId = await remote.upsertCategory(c);
+        if (survivorId == c.id) {
+          await repo.markClean('categories', c.id, c.updatedAt);
+        } else {
+          // Server-side dedup merged this category into an existing one with
+          // the same name (see mergeCategoryId doc comment); c.id never
+          // actually landed server-side, so there's nothing to mark clean -
+          // drop it locally and repoint any articles that used it.
+          await repo.mergeCategoryId(c.id, survivorId);
+        }
+      } catch (e) {
+        // Don't let one stuck category (e.g. a rename collision nothing
+        // auto-resolves) block every other unrelated dirty row in this
+        // pass. Leave it dirty and keep going; trySync() still surfaces
+        // the overall failure via hasPendingFailure below.
+        anyFailed = true;
+        debugPrint('SyncService: failed to push category ${c.id}: $e');
       }
     }
     for (final a in await repo.dirtyArticles()) {
-      final path = a.imagePath;
-      if (path != null && !a.deleted && File(path).existsSync()) {
-        await remote.uploadImage(a.remoteImagePath, File(path));
+      try {
+        final path = a.imagePath;
+        if (path != null && !a.deleted && File(path).existsSync()) {
+          await remote.uploadImage(a.remoteImagePath, File(path));
+        }
+        await remote.upsertArticle(a);
+        await repo.markClean('articles', a.id, a.updatedAt);
+      } catch (e) {
+        // Same isolation as above: a single bad article row (e.g. one
+        // referencing a category that failed to push, or a transient
+        // network blip) must not stop the rest of the queue.
+        anyFailed = true;
+        debugPrint('SyncService: failed to push article ${a.id}: $e');
       }
-      await remote.upsertArticle(a);
-      await repo.markClean('articles', a.id, a.updatedAt);
+    }
+    if (anyFailed) {
+      throw Exception('_push: one or more rows failed to push');
     }
   }
 
