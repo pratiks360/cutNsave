@@ -30,6 +30,20 @@ class Repository {
     return c;
   }
 
+  Future<void> renameCategory(Category c, String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty || clean == c.name) return;
+    await upsertCategory(c.copyWith(name: clean));
+  }
+
+  /// Soft-deletes [c]. Local articles pointing to it are left untouched --
+  /// the category just drops out of `categories()` (which filters
+  /// `deleted = 0`), so they render as uncategorized (see `names` lookup in
+  /// HomeScreen) without needing a bulk rewrite of every affected article.
+  Future<void> softDeleteCategory(Category c) async {
+    await upsertCategory(c.copyWith(deleted: true));
+  }
+
   Future<List<Category>> dirtyCategories() async =>
       (await _db.query('categories', where: 'dirty = 1'))
           .map(Category.fromLocal)
