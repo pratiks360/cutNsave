@@ -5,7 +5,7 @@ class LocalDb {
     return factory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         singleInstance: false,
         onCreate: (db, _) async {
           await db.execute('''
@@ -26,6 +26,7 @@ class LocalDb {
               original_text TEXT NOT NULL,
               original_lang TEXT NOT NULL,
               english_text TEXT,
+              english_declined INTEGER NOT NULL DEFAULT 0,
               scanned_at TEXT NOT NULL,
               created_by TEXT,
               updated_at TEXT NOT NULL,
@@ -40,6 +41,14 @@ class LocalDb {
           // was never uploaded) isn't retried on every single sync.
           if (oldVersion < 2) {
             await db.execute('ALTER TABLE articles ADD COLUMN image_download_failed_at TEXT');
+          }
+          // v2 -> v3: distinguish "translation declined by the user" from
+          // "translation pending/failed" (both previously left english_text
+          // null with no way to tell them apart - see ArticleSaver._english
+          // and the "Translate now" button condition in ArticleScreen).
+          if (oldVersion < 3) {
+            await db.execute(
+                'ALTER TABLE articles ADD COLUMN english_declined INTEGER NOT NULL DEFAULT 0');
           }
         },
       ),

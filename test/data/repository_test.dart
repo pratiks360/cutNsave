@@ -34,6 +34,12 @@ void main() {
     expect(a.englishText, 'Hello');
   });
 
+  test('englishDeclined persists through the real sqlite column', () async {
+    final declined = art('a1').copyWith(englishDeclined: true);
+    await repo.upsertArticle(declined);
+    expect((await repo.article('a1'))!.englishDeclined, isTrue);
+  });
+
   test('articles are newest-scanned first and exclude deleted', () async {
     await repo.upsertArticle(art('old', scanned: DateTime.utc(2026, 1, 1)));
     await repo.upsertArticle(art('new', scanned: DateTime.utc(2026, 2, 1)));
