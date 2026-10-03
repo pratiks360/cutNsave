@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 
 import 'cloud_api.dart';
@@ -27,8 +28,9 @@ class TranslateService {
     try {
       final local = await mlkit(text, sourceLang);
       if (local.trim().isNotEmpty) return TranslateResult(local);
-    } catch (_) {
+    } catch (e) {
       // model missing / offline / ML Kit error: try cloud
+      debugPrint('TranslateService: ML Kit failed, falling back to cloud: $e');
     }
     try {
       final remote = await cloud.translate(text, sourceLang);
@@ -38,7 +40,8 @@ class TranslateService {
       return const TranslateResult(null, skip: CloudSkip.quota);
     } on TextTooLong {
       return const TranslateResult(null, skip: CloudSkip.tooLong);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('TranslateService: cloud translate failed: $e');
       return const TranslateResult(null, skip: CloudSkip.offline);
     }
   }

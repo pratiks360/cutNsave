@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
 import 'cloud_api.dart';
@@ -38,15 +38,17 @@ class OcrService {
       // on-device without treating this as a quota/connectivity skip.
     } on QuotaExceeded {
       skip = CloudSkip.quota;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('OcrService: cloud OCR failed, falling back to ML Kit: $e');
       skip = CloudSkip.offline;
     }
     try {
       final local = await mlkit(imagePath);
       return OcrResult(local, skip: skip);
-    } catch (_) {
+    } catch (e) {
       // ML Kit threw too (platform exception, decode failure, ...): fail
       // soft instead of propagating and hanging the caller's UI.
+      debugPrint('OcrService: ML Kit fallback also failed: $e');
       return OcrResult('', skip: skip ?? CloudSkip.offline);
     }
   }
