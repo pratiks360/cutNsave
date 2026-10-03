@@ -1,5 +1,5 @@
 begin;
-select plan(34);
+select plan(37);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'mom@example.com'),
@@ -270,6 +270,35 @@ select is(
 reset role;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
 set local role authenticated;
+
+-- translation_declined: a deliberate "don't translate" defaults to false on
+-- a plain insert (omitted/legacy callers), can be set true explicitly, and
+-- persists across an update that otherwise doesn't touch it - distinguishing
+-- "declined" from "pending/failed" is the whole point of this column, so a
+-- later unrelated edit must not silently clear it back to false.
+select set_config('test.art_decl', gen_random_uuid()::text, true);
+select public.upsert_article(
+  current_setting('test.art_decl')::uuid, current_setting('test.lib')::uuid, null, null,
+  'legacy caller omits p_translation_declined', 'mr', null, now(), null, null,
+  '2026-06-01T00:00:00Z'::timestamptz);
+select is(
+  (select translation_declined from public.articles where id = current_setting('test.art_decl')::uuid),
+  false, 'omitting p_translation_declined defaults to false');
+
+select public.upsert_article(
+  current_setting('test.art_decl')::uuid, current_setting('test.lib')::uuid, null, null,
+  'declined', 'mr', null, now(), null, null, '2026-06-02T00:00:00Z'::timestamptz, true);
+select is(
+  (select translation_declined from public.articles where id = current_setting('test.art_decl')::uuid),
+  true, 'an explicit decline is persisted');
+
+select public.upsert_article(
+  current_setting('test.art_decl')::uuid, current_setting('test.lib')::uuid, null, null,
+  'declined, category changed later', 'mr', null, now(), null, null,
+  '2026-06-03T00:00:00Z'::timestamptz, true);
+select is(
+  (select translation_declined from public.articles where id = current_setting('test.art_decl')::uuid),
+  true, 'a later update that still passes the decline through keeps it set');
 
 -- non-member rejected by both RPCs
 reset role;

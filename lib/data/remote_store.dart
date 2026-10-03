@@ -102,6 +102,7 @@ class SupabaseRemoteStore implements RemoteStore {
       'p_original_text': m['original_text'],
       'p_original_lang': m['original_lang'],
       'p_english_text': m['english_text'],
+      'p_english_declined': m['english_declined'],
       'p_scanned_at': m['scanned_at'],
       'p_created_by': m['created_by'],
       'p_deleted_at': m['deleted_at'],
