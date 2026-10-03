@@ -18,10 +18,20 @@ class CutNSaveApp extends StatelessWidget {
       theme: buildTheme(),
       builder: (context, child) {
         final app = context.watch<AppState>();
+        // Android 15+ (targetSdk 35+) enforces edge-to-edge rendering: the
+        // system no longer reserves space for the gesture/button nav bar, so
+        // bottom-aligned content (a button at the end of a ListView, not a
+        // FloatingActionButton -- Scaffold already insets those itself) gets
+        // drawn underneath it unless explicitly padded. SafeArea here is
+        // app-wide so no individual screen has to remember to add it;
+        // nesting it inside a screen that already wraps its own body in
+        // SafeArea (login_screen, not_member_screen) is harmless -- the
+        // inner one just sees zero additional padding to consume.
+        final safe = SafeArea(child: child!);
         if (app.status == AuthStatus.ready) {
-          return ServicesScope(child: child!);
+          return ServicesScope(child: safe);
         }
-        return child!;
+        return safe;
       },
       home: const Gate(),
     );
