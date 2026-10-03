@@ -5,7 +5,13 @@ const MAX_CHARS = 30000;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
-  const { text, source, library_id } = await req.json();
+  let body: { text?: string; source?: string; library_id?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: 'bad_request' }, 400);
+  }
+  const { text, source, library_id } = body;
   if (!text || !source || !library_id) return json({ error: 'bad_request' }, 400);
   if (text.length > MAX_CHARS) return json({ error: 'too_long' }, 413);
 

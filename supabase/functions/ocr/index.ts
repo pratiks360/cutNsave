@@ -3,7 +3,13 @@ import { extractText } from '../_shared/google.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
-  const { image_base64, library_id } = await req.json();
+  let body: { image_base64?: string; library_id?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return json({ error: 'bad_request' }, 400);
+  }
+  const { image_base64, library_id } = body;
   if (!image_base64 || !library_id) return json({ error: 'bad_request' }, 400);
 
   const gate = await consume(req, library_id, 'ocr', 1);
