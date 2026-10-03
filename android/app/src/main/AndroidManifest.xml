@@ -1,6 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Deliberately NOT declaring android.permission.CAMERA: scan_screen.dart's
+         ImagePicker.pickImage(source: ImageSource.camera) launches the system
+         camera app via an ACTION_IMAGE_CAPTURE intent rather than the in-app
+         Camera API, so it needs no CAMERA permission of its own. Declaring it
+         here would be actively harmful: once a permission is declared,
+         image_picker's camera intent requires it to be *granted* at runtime,
+         but image_picker never requests it, so a user who denies/revokes it
+         would hard-fail instead of just getting the delegated system camera. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
         android:label="cutNsave"
