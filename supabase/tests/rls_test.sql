@@ -1,5 +1,5 @@
 begin;
-select plan(28);
+select plan(30);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'mom@example.com'),
@@ -187,6 +187,22 @@ select is(
   (select count(*)::int from public.categories where id = current_setting('test.cat_dup2')::uuid),
   0, 'the losing id was never inserted');
 
+-- dedup is scoped to library_id: the same name in a DIFFERENT library (dave,
+-- library B) must insert its own row, never merge into library A's
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000d4","email":"dave@example.com","role":"authenticated"}', true);
+set local role authenticated;
+select set_config('test.cat_dup_b', gen_random_uuid()::text, true);
+select is(
+  public.upsert_category(current_setting('test.cat_dup_b')::uuid, current_setting('test.lib_b')::uuid,
+    'Groceries', null, '2026-04-03T00:00:00Z'::timestamptz),
+  current_setting('test.cat_dup_b')::uuid,
+  'a same-named category in a different library inserts its own row, not a cross-library merge');
+
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
+set local role authenticated;
+
 -- articles.created_by is stamped from the caller's auth.uid(), not trusted
 -- from the client, and is immutable across updates (still as mom).
 select set_config('test.art_cb', gen_random_uuid()::text, true);
@@ -209,6 +225,24 @@ select is(
   (select created_by from public.articles where id = current_setting('test.art_cb')::uuid),
   '00000000-0000-0000-0000-0000000000a1'::uuid,
   'updating an article never changes its created_by, regardless of what the client sends');
+
+-- a different member of the same library (sis) updating mom's article also
+-- cannot alter created_by, confirming this isn't just a same-caller quirk
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000b2","email":"sis@example.com","role":"authenticated"}', true);
+set local role authenticated;
+select public.upsert_article(
+  current_setting('test.art_cb')::uuid, current_setting('test.lib')::uuid, null, null,
+  'authored v3 by sis', 'mr', null, now(),
+  '00000000-0000-0000-0000-0000000000b2', -- sis claims herself as author
+  null, '2026-05-03T00:00:00Z'::timestamptz);
+select is(
+  (select created_by from public.articles where id = current_setting('test.art_cb')::uuid),
+  '00000000-0000-0000-0000-0000000000a1'::uuid,
+  'a different member updating the article still cannot change its created_by from the original author');
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000a1","email":"mom@example.com","role":"authenticated"}', true);
+set local role authenticated;
 
 -- non-member rejected by both RPCs
 reset role;
