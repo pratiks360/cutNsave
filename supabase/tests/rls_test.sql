@@ -1,5 +1,5 @@
 begin;
-select plan(30);
+select plan(34);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'mom@example.com'),
@@ -186,6 +186,33 @@ select is(
 select is(
   (select count(*)::int from public.categories where id = current_setting('test.cat_dup2')::uuid),
   0, 'the losing id was never inserted');
+
+-- a third "device" independently creates yet another case-insensitive
+-- duplicate of the same name, under a third id. upsert_category now dedupes
+-- via a single atomic INSERT ... ON CONFLICT (replacing the old
+-- SELECT-then-INSERT), so this proves the merge path isn't limited to a
+-- one-shot "first collision only" special case -- repeated colliding
+-- inserts keep merging into the same original survivor.
+select set_config('test.cat_dup3', gen_random_uuid()::text, true);
+select is(
+  public.upsert_category(current_setting('test.cat_dup3')::uuid, current_setting('test.lib')::uuid,
+    'groceries', null, '2026-04-04T00:00:00Z'::timestamptz),
+  current_setting('test.cat_dup1')::uuid,
+  'a second, later collision from a third id also merges into the original survivor');
+select is(
+  (select count(*)::int from public.categories where lower(name) = 'groceries'),
+  1, 'still only one row after the second colliding insert');
+
+-- same id, colliding (different-case) name pushed again by the same caller:
+-- this takes the UPDATE-existing-row branch (the id already exists), not
+-- the INSERT ... ON CONFLICT branch, and must not raise 23505 either.
+select lives_ok(
+  $$select public.upsert_category(current_setting('test.cat_dup1')::uuid, current_setting('test.lib')::uuid,
+    'GROCERIES', null, '2026-04-05T00:00:00Z'::timestamptz)$$,
+  'same id + colliding-case name from the same caller updates in place without erroring');
+select is(
+  (select name from public.categories where id = current_setting('test.cat_dup1')::uuid),
+  'GROCERIES', 'the in-place update applied the new casing to the survivor row');
 
 -- dedup is scoped to library_id: the same name in a DIFFERENT library (dave,
 -- library B) must insert its own row, never merge into library A's
