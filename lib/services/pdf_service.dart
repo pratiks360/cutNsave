@@ -25,6 +25,17 @@ const _renderTimeout = Duration(seconds: 20);
 // non-error rather than leaving the UI's busy spinner stuck forever.
 const _shareResultTimeout = Duration(seconds: 10);
 
+enum ShareOutcome {
+  /// The proper PDF (image + original text + English text) was shared.
+  pdf,
+
+  /// PDF generation failed (e.g. the platform WebView never completed --
+  /// seen on at least one real device/Android build, not just a theoretical
+  /// risk) and the original photo was shared instead, so sharing still
+  /// produces *something* rather than a dead end.
+  photoFallback,
+}
+
 class PdfService {
   /// Renders via the platform WebView so Devanagari conjuncts shape correctly
   /// (the pure-Dart `pdf` package cannot shape Indic scripts).
@@ -48,9 +59,27 @@ class PdfService {
     return file;
   }
 
-  Future<void> share(Article a) async {
-    final file = await buildFile(a);
-    await Share.shareXFiles([XFile(file.path, mimeType: 'application/pdf')])
-        .timeout(_shareResultTimeout, onTimeout: () => ShareResult.unavailable);
+  Future<ShareOutcome> share(Article a) async {
+    try {
+      final file = await buildFile(a);
+      await Share.shareXFiles([XFile(file.path, mimeType: 'application/pdf')])
+          .timeout(_shareResultTimeout, onTimeout: () => ShareResult.unavailable);
+      return ShareOutcome.pdf;
+    } catch (_) {
+      await _sharePhotoFallback(a);
+      return ShareOutcome.photoFallback;
+    }
+  }
+
+  Future<void> _sharePhotoFallback(Article a) async {
+    final text = [
+      a.originalText,
+      if (a.englishText != null && a.englishText!.trim().isNotEmpty) a.englishText!,
+    ].join('\n\n');
+    final path = a.imagePath;
+    final share = (path != null && File(path).existsSync())
+        ? Share.shareXFiles([XFile(path, mimeType: 'image/jpeg')], text: text)
+        : Share.share(text);
+    await share.timeout(_shareResultTimeout, onTimeout: () => ShareResult.unavailable);
   }
 }

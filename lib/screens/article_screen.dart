@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../data/models.dart';
 import '../services/ocr_service.dart' show CloudSkip;
+import '../services/pdf_service.dart' show ShareOutcome;
 import '../services/services.dart';
 import '../state/app_state.dart';
 import 'edit_article_screen.dart';
@@ -52,7 +53,11 @@ class _ArticleScreenState extends State<ArticleScreen> {
   Future<void> _share() async {
     setState(() => _sharing = true);
     try {
-      await _s.pdf.share(_article!);
+      final outcome = await _s.pdf.share(_article!);
+      if (outcome == ShareOutcome.photoFallback && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(context.tr('share_pdf_failed_shared_photo'))));
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
