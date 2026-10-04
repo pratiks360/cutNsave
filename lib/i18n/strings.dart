@@ -55,6 +55,8 @@ class Tr {
     'installed_version': 'Version {version}',
     'members': 'Members',
     'add_member': 'Add member',
+    'add_member_no_notification':
+        'No email is sent — tell them to install the app and sign in with this Google account.',
     'member_email_hint': 'Google email',
     'invalid_email': 'Invalid email',
     'owner': 'Owner',
@@ -127,6 +129,8 @@ class Tr {
     'installed_version': 'आवृत्ती {version}',
     'members': 'सदस्य',
     'add_member': 'सदस्य जोडा',
+    'add_member_no_notification':
+        'कोणताही ईमेल पाठवला जात नाही — त्यांना अ‍ॅप इन्स्टॉल करून या Google खात्याने साइन इन करायला सांगा.',
     'member_email_hint': 'Google ईमेल',
     'invalid_email': 'ईमेल चुकीचा आहे',
     'owner': 'मालक',

@@ -101,6 +101,13 @@ class _MembersScreenState extends State<MembersScreen> {
             ),
             const SizedBox(height: 12),
             FilledButton(onPressed: _add, child: Text(context.t('add_member'))),
+            const SizedBox(height: 8),
+            Text(
+              context.t('add_member_no_notification'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
           ],
           if (_error != null)
             Padding(

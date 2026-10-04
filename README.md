@@ -160,7 +160,7 @@ The Release workflow builds a signed APK and attaches `cutnsave.apk`. Installed 
 |---|---|
 | **App language** | Toggles the UI between Marathi (default) and English |
 | **Cloud quota (this month)** | Shows remaining Cloud OCR calls and translation characters for the family library |
-| **Members** | Add/remove allow-listed family emails who can join the shared library |
+| **Members** | Add/remove allow-listed family emails who can join the shared library — adding one does **not** send an email; tell them directly to install the app and sign in with that Google account |
 | **Check for updates** | Pulls the latest release tag from GitHub, downloads and installs the signed APK in-app |
 | **Sign out** | Signs out of Google; local data stays cached for offline access until next sign-in |
 
